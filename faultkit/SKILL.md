@@ -209,7 +209,8 @@ found by listing a parent directory.
 
 1. **Safety gate, before anything else.** Look for production signals:
    deploy variables, non-local database URLs, a `.env` naming a live
-   account, a real provider key with a baseline that would spend it. If
+   account, a real provider key with a baseline that would spend it. Judge
+   by names and hosts; never print, copy, or send a secret's value. If
    found, stop and say why. Confirm irreversible effects are fakes.
 2. Resolve the invariant and the target command: from the arguments, from
    the project's test runner, or ask. One invariant per run. Then decide

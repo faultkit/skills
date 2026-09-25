@@ -288,7 +288,8 @@ should read `invariant proven under fault`. Anything else is not done yet.
 - Runs stay in local, test, or explicitly authorized environments. Before
   running, look for production signals: deploy variables, non-local database
   URLs, a `.env` naming a live account, a real provider key with a baseline
-  that would spend it. If found, stop and say why.
+  that would spend it. Judge by names and hosts; never print, copy, or send a
+  secret's value. If found, stop and say why.
 - Irreversible side effects must be fakes: a JSONL ledger, an in-memory
   store, a sandbox account.
 - The runner downloads only the pinned version from the fixed releases URL,
