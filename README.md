@@ -21,9 +21,10 @@ way to prove the result.
 | --- | --- | --- |
 | Review | Assess, explain, or plan | Maps value, boundaries, silent failures, invariants, and residual risk. Changes no code. |
 | Harden | Build or fix a workflow | Adds the smallest deterministic guard at the action boundary and the test that locks it. |
-| Run | Explicitly requested fault injection | Selects or generates a faultkit scenario, writes the gate test if missing, obtains faultkit, runs it locally, reports the proof state. |
+| Run | Explicitly requested fault injection | Selects or generates a faultkit scenario, writes the gate test if missing, records it in `.faultkit/invariants/`, obtains faultkit, runs it locally, reports the proof state. |
+| Run all | Explicitly requested, whole project | Adds every invariant a fault can express to `.faultkit/invariants/`, runs them all, reports one proof state per invariant. |
 
-Run is opt-in. Ordinary use of the skill neither installs tools nor
+Run and Run all are opt-in. Ordinary use of the skill neither installs tools nor
 injects faults. Review and Harden end by asking whether to run it and wait
 for the answer. Add `--auto` to any command to run the whole chain without
 stopping at the questions; the safety gate still runs first and a production
@@ -36,10 +37,10 @@ signal still stops the chain.
 /plugin install faultkit@faultkit
 ```
 
-Then `/faultkit:review`, `/faultkit:harden`, and
-`/faultkit:run` are available. The first two also trigger on their
-own when a conversation turns to resilience; `run` runs only when you
-invoke it.
+Then `/faultkit:review`, `/faultkit:harden`, `/faultkit:run`, and
+`/faultkit:run-all` are available. The first two also trigger on their
+own when a conversation turns to resilience; `run` and `run-all` run only
+when you invoke them.
 
 ## Install for other agents
 
@@ -69,6 +70,26 @@ model stream must never dispatch a route. Add deterministic tests.
 /faultkit:run a paid invoice is never sent to collections -- pytest -q
 ```
 
+```text
+/faultkit:run-all
+```
+
+## The invariant manifest
+
+Each invariant the skill proves is kept in the project under
+`.faultkit/invariants/`: one faultkit scenario per invariant and a
+`manifest.json` mapping each one to its scenario, injection mode, and gate
+test. Commit the directory. Any machine, including CI, replays every
+invariant with one command and gets one proof state per invariant:
+
+```bash
+python3 faultkit/scripts/run_faultkit.py --manifest .faultkit/invariants/manifest.json
+```
+
+It exits non-zero when any invariant is broken or any run injected nothing.
+The format is in `faultkit/references/faultkit-execution.md`, "The
+invariant manifest".
+
 ## The proof condition
 
 A run counts as evidence only when
@@ -90,7 +111,7 @@ irreversible side effects replaced by fakes.
 
 ## Layout
 
-- `faultkit/SKILL.md`: the skill, with its three modes
+- `faultkit/SKILL.md`: the skill, with its four modes
 - `faultkit/references/`: the method, the silent-failure catalog, the
   faultkit scenario mapping, execution and gotchas
 - `faultkit/scripts/run_faultkit.py`: the verified runner

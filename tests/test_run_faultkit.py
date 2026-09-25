@@ -1,7 +1,12 @@
 """Unit tests for the runner's pure functions. Standard library only."""
 
+import contextlib
 import hashlib
+import io
+import json
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -132,6 +137,145 @@ class ArgTests(unittest.TestCase):
     def test_missing_target_is_usage_error(self):
         with self.assertRaises(SystemExit):
             rf.parse_args(["--config", "s.yaml", "--report", "r.json"])
+
+    def test_builtin_scenario_replaces_config(self):
+        ns, _ = rf.parse_args(["--scenario", "llm-api-degraded", "--report", "r.json", "--", "true"])
+        self.assertEqual(ns.scenario, "llm-api-degraded")
+
+    def test_config_and_scenario_are_exclusive(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            rf.parse_args(["--config", "s.yaml", "--scenario", "x", "--report", "r.json", "--", "true"])
+
+    def test_manifest_needs_no_target(self):
+        ns, target = rf.parse_args(["--manifest", "m.json"])
+        self.assertEqual((ns.manifest, target), ("m.json", []))
+
+    def test_manifest_rejects_per_run_flags(self):
+        for extra in (["--config", "s.yaml"], ["--base-url"], ["--", "true"]):
+            with self.subTest(extra=extra), self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+                rf.parse_args(["--manifest", "m.json", *extra])
+
+
+def entry(**overrides):
+    base = {"id": "no-auto-route", "invariant": "never auto-route a guess", "config": "no-auto-route.yaml", "gate": ["node", "--test"]}
+    base.update(overrides)
+    return {k: v for k, v in base.items() if v is not None}
+
+
+class ManifestTests(unittest.TestCase):
+    def load(self, data):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "manifest.json"
+            path.write_text(json.dumps(data))
+            return rf.load_manifest(path)
+
+    def test_valid_manifest_loads(self):
+        entries = self.load({"version": 1, "invariants": [entry(), entry(id="second", config=None, scenario="llm-api-degraded")]})
+        self.assertEqual([e["id"] for e in entries], ["no-auto-route", "second"])
+
+    def test_invalid_manifests_are_rejected(self):
+        cases = {
+            "wrong version": {"version": 2, "invariants": [entry()]},
+            "no invariants": {"version": 1, "invariants": []},
+            "bad id": {"version": 1, "invariants": [entry(id="Not A Slug")]},
+            "duplicate id": {"version": 1, "invariants": [entry(), entry()]},
+            "no invariant text": {"version": 1, "invariants": [entry(invariant="")]},
+            "config and scenario": {"version": 1, "invariants": [entry(scenario="llm-api-degraded")]},
+            "neither config nor scenario": {"version": 1, "invariants": [entry(config=None)]},
+            "gate as a string": {"version": 1, "invariants": [entry(gate="node --test")]},
+            "empty gate": {"version": 1, "invariants": [entry(gate=[])]},
+            "unknown mode": {"version": 1, "invariants": [entry(mode="docker")]},
+            "base_url as a string": {"version": 1, "invariants": [entry(base_url="yes")]},
+        }
+        for name, data in cases.items():
+            with self.subTest(name), self.assertRaises(rf.ManifestError):
+                self.load(data)
+
+    def test_unreadable_manifest_is_a_manifest_error(self):
+        with self.assertRaises(rf.ManifestError):
+            rf.load_manifest(Path("/nonexistent/manifest.json"))
+
+
+class CommandTests(unittest.TestCase):
+    def test_config_entry(self):
+        cmd = rf.build_command(Path("/fk"), config="c.yaml", report="r.json", base_url=True, provider="openai", verbose=True, target=["node", "--test"])
+        self.assertEqual(cmd, ["/fk", "run", "--config", "c.yaml", "--report", "r.json", "--mode", "auto", "--base-url", "--provider", "openai", "--verbose", "--", "node", "--test"])
+
+    def test_builtin_entry(self):
+        cmd = rf.build_command(Path("/fk"), scenario="llm-api-degraded", report="r.json", target=["pytest"])
+        self.assertEqual(cmd[:4], ["/fk", "run", "--scenario", "llm-api-degraded"])
+
+
+class AggregateTests(unittest.TestCase):
+    PROVEN, SILENT = "invariant proven under fault", "silent failure confirmed"
+    INVALID, ERROR = "invalid evidence: nothing was injected", "error: faultkit exited 2"
+
+    def test_all_proven_is_ok(self):
+        self.assertEqual(rf.aggregate_exit([self.PROVEN, self.PROVEN]), rf.EXIT_OK)
+
+    def test_one_silent_failure_fails_the_run(self):
+        self.assertEqual(rf.aggregate_exit([self.PROVEN, self.SILENT]), rf.EXIT_TARGET_FAILED)
+
+    def test_invalid_evidence_outranks_a_silent_failure(self):
+        self.assertEqual(rf.aggregate_exit([self.SILENT, self.INVALID]), rf.EXIT_FAULT_NOT_FIRED)
+
+    def test_error_outranks_everything(self):
+        self.assertEqual(rf.aggregate_exit([self.INVALID, self.ERROR, self.SILENT]), rf.EXIT_INTERNAL)
+
+    def test_summary_lists_every_invariant(self):
+        text = rf.render_summary([("a", 6, 1, self.SILENT), ("bb", 2, 0, self.PROVEN)], color=False)
+        self.assertIn("a              6     1  silent failure confirmed", text)
+        self.assertIn("bb             2     0  invariant proven under fault", text)
+
+
+# A stand-in faultkit: writes a report with one fired event and exits with $FAKE_EXIT.
+FAKE_FAULTKIT = """#!/bin/sh
+while [ $# -gt 0 ]; do
+  case $1 in --report) shift; printf '{"events":[{"fired":true}]}' > "$1";; --) break;; esac
+  shift
+done
+exit "${FAKE_EXIT:-1}"
+"""
+
+
+@unittest.skipIf(os.name != "posix", "fake faultkit is a shell script")
+class EndToEndTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.fake = self.tmp / "faultkit"
+        self.fake.write_text(FAKE_FAULTKIT)
+        self.fake.chmod(0o755)
+
+    def main(self, argv):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = rf.main(["--faultkit-bin", str(self.fake), "--color", "never", *argv])
+        return code, out.getvalue()
+
+    def test_single_run_creates_the_report_directory(self):
+        report = self.tmp / "missing" / "dir" / "r.json"
+        code, out = self.main(["--config", "s.yaml", "--report", str(report), "--", "true"])
+        self.assertEqual(code, 1)
+        self.assertTrue(report.exists())
+        self.assertIn("faults fired:  1", out)
+        self.assertIn("silent failure confirmed", out)
+
+    def test_manifest_runs_every_invariant(self):
+        manifest = self.tmp / ".faultkit" / "invariants" / "manifest.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(json.dumps({"version": 1, "invariants": [entry(), entry(id="second")]}))
+        reports = self.tmp / "reports"
+        code, out = self.main(["--manifest", str(manifest), "--reports-dir", str(reports)])
+        self.assertEqual(code, rf.EXIT_TARGET_FAILED)
+        self.assertEqual(sorted(p.name for p in reports.iterdir()), ["no-auto-route.report.json", "second.report.json"])
+        self.assertIn(str(manifest.parent / "no-auto-route.yaml"), out)
+        self.assertIn("=== run-all ===", out)
+
+    def test_bad_manifest_is_a_usage_error(self):
+        manifest = self.tmp / "manifest.json"
+        manifest.write_text("{}")
+        code, _ = self.main(["--manifest", str(manifest)])
+        self.assertEqual(code, rf.EXIT_USAGE)
 
 
 if __name__ == "__main__":

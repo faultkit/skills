@@ -45,8 +45,8 @@ Rules:
 - `response_body` verbatim, in the real service's shape, with nothing
   invented. A stale snapshot omits data; it does not fabricate any.
 - One scenario per invariant. A second failure mode is a second file.
-- Put the file under `tests/faults/<invariant-slug>.yaml` unless the project
-  already keeps scenarios somewhere.
+- Put the file under `.faultkit/invariants/<invariant-slug>.yaml` and record
+  it in the manifest; see "The invariant manifest".
 
 Three worked examples, one per shape that needs a custom scenario:
 
@@ -174,17 +174,75 @@ test("a ticket the model did not classify is never auto-routed", async () => {
 });
 ```
 
+## The invariant manifest
+
+Every invariant a run proves is kept so that CI can replay all of them.
+`.faultkit/invariants/` holds one scenario file per invariant and
+`manifest.json`, which maps each invariant to its scenario, injection mode,
+and gate. Commit both. Reports go to `.faultkit/reports/`, which is not
+committed.
+
+```json
+{
+  "version": 1,
+  "invariants": [
+    {
+      "id": "triaged-only-when-model-classified",
+      "invariant": "No ticket is stored as triaged unless the model produced the classification.",
+      "shape": "S2",
+      "config": "triaged-only-when-model-classified.yaml",
+      "base_url": true,
+      "provider": "openai",
+      "gate": ["node", "--test", "test/triaged-only-when-model-classified.test.mjs"]
+    }
+  ]
+}
+```
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `id` | yes | kebab-case slug; names the scenario file, the gate test, and the report |
+| `invariant` | yes | one sentence over observable state |
+| `shape` | no | silent-failure shape, S1 to S8 |
+| `config` or `scenario` | exactly one | a scenario file relative to the manifest, or a builtin name |
+| `mode` | no | `auto` (default), `proxy`, `ebpf` |
+| `base_url` | no | `true` for `--base-url` injection |
+| `provider` | no | limit fixture-driven failure modes to one provider |
+| `gate` | yes | the gate's command as an argv list, run from the project root without a shell |
+
+Rules:
+
+- One entry per invariant, `id` unique. Recording an invariant again
+  replaces its entry; it never adds a second one.
+- The gate runs that invariant's test only, so a red row names the
+  invariant that broke.
+- Never edit an entry's scenario, gate, or fixture to turn a red row green.
+  Harden the code.
+
 ## Running with the helper
 
 `scripts/run_faultkit.py` acquires faultkit, runs the scenario, reads the
 JSON report, and prints the proof block. It exits with faultkit's own code.
+A builtin scenario takes `--scenario <name>` in place of `--config`.
 
 ```bash
 python3 <skill>/scripts/run_faultkit.py --verbose \
-  --config tests/faults/<invariant-slug>.yaml \
-  --report artifacts/<invariant-slug>.report.json \
+  --config .faultkit/invariants/<invariant-slug>.yaml \
+  --report .faultkit/reports/<invariant-slug>.report.json \
   [--base-url] [--provider openai] [--color auto|always|never] \
   -- <the project's test command>
+```
+
+With `--manifest`, it runs every entry of the manifest from the project
+root, one faultkit run each, writing `.faultkit/reports/<id>.report.json`.
+It prints a proof block per invariant and a closing `=== run-all ===` table,
+and exits with the worst result: 2 if any run errored, else 3 if any
+injected nothing, else 1 if any silent failure was confirmed, else 0. A
+malformed manifest exits 4 before anything runs.
+
+```bash
+python3 <skill>/scripts/run_faultkit.py --verbose \
+  --manifest .faultkit/invariants/manifest.json
 ```
 
 `--verbose` makes faultkit print one line per fired fault with its host and
@@ -205,12 +263,12 @@ The proof block:
 
 ```text
 === proof ===
-scenario:      tests/faults/paid-invoice-never-escalated.yaml
+scenario:      .faultkit/invariants/paid-invoice-never-escalated.yaml
 mode:          auto
 faults fired:  1
 target exit:   1
 proof state:   silent failure confirmed
-report:        artifacts/paid-invoice-never-escalated.report.json
+report:        .faultkit/reports/paid-invoice-never-escalated.report.json
 ```
 
 Run the gate under the fault once per mode of the code under test. The
