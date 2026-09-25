@@ -95,15 +95,20 @@ Do not change code in this mode.
    expresses the fault, and say "custom" with the boundary host and path
    when none does. An invariant no fault expresses goes under residual
    risk with the reason.
-7. Show the report. Then ask one question and stop: whether to run faultkit
-   now, with Run for the primary invariant (naming the invariant, the
-   scenario, the injection mode, and the exact command), or with Run all
-   when the proof plan has more than one line. Wait for the answer. Until
-   the user says yes, do not run faultkit, download anything, or write a
-   scenario or a test. On yes, continue with the chosen mode from its first
-   step, the safety gate. In a non-interactive session, print both commands
-   and end. With `--auto`, skip the question and continue with Run at
-   once.
+7. Show the report. Close it with one count line, where n is the lines
+   under Invariants and k the lines in the proof plan:
+   `Invariants: <n> found, <k> provable with faultkit.` With k = 0, say so
+   and end without a question.
+8. Otherwise ask one question and stop: whether to run faultkit now for the
+   primary invariant with Run, naming the invariant, the scenario, the
+   injection mode, and the exact command. When k > 1, add one line under
+   the question: `/faultkit:run-all` proves all k in one go and keeps them
+   in `.faultkit/invariants/`. Wait for the answer. Until the user says yes,
+   do not run faultkit, download anything, or write a scenario or a test.
+   On yes, continue with Run from its first step, the safety gate; on a
+   request for all of them, with Run all. In a non-interactive session,
+   print the Run command, and the Run all command when k > 1, and end.
+   With `--auto`, skip the question and continue with Run at once.
 
 ## Harden
 
@@ -121,7 +126,7 @@ Do not change code in this mode.
 5. Show the diff, the test, and one paragraph naming the invariant and the
    boundary. Then ask one question and stop: whether to run faultkit now to
    prove it, with the exact command. Wait for the answer, exactly as Review
-   step 7 does. With `--auto`, skip the question and continue with Run
+   step 8 does. With `--auto`, skip the question and continue with Run
    at once.
 
 ## Run
