@@ -20,7 +20,7 @@ way to prove the result.
 | Mode | When | What it does |
 | --- | --- | --- |
 | Review | Assess, explain, or plan | Maps value, boundaries, silent failures, invariants, and residual risk. Changes no code. |
-| Harden | Build or fix a workflow | Adds the smallest deterministic guard at the action boundary and the test that locks it. |
+| Harden | Build or fix a workflow | Counts the invariants, asks whether to harden them one at a time, all in a row, or on your instruction, adds the smallest deterministic guard at each action boundary and the test that locks it, and asks before opening a pull request. |
 | Run | Explicitly requested fault injection | Selects or generates a faultkit scenario, writes the gate test if missing, records it in `.faultkit/invariants/`, obtains faultkit, runs it locally, reports the proof state. |
 | Run all | Explicitly requested, whole project | Adds every invariant a fault can express to `.faultkit/invariants/`, runs them all, reports one proof state per invariant. |
 

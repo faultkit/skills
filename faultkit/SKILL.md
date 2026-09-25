@@ -25,7 +25,7 @@ them.
 | Mode | When | What it does |
 | --- | --- | --- |
 | Review | Assess, explain, or plan | Maps value, boundaries, silent-failure candidates, invariants, smallest recovery, residual risk. Changes no code. |
-| Harden | Build or fix a workflow | Adds the smallest deterministic guard at the action boundary and the gate test that locks it. Runs the project's tests, not faultkit. |
+| Harden | Build or fix a workflow | Counts the invariants, asks how to proceed when several are unguarded, adds the smallest deterministic guard at each action boundary and the gate test that locks it, and offers a pull request. Runs the project's tests, not faultkit. |
 | Run | Explicitly requested fault injection | Selects or generates a faultkit scenario, writes the gate if missing, records it in the invariant manifest, obtains faultkit, runs it locally, reports the proof state. |
 | Run all | Explicitly requested, for the whole project | Adds every invariant a fault can express to the manifest, then runs every entry and reports one proof state per invariant. |
 
@@ -38,19 +38,21 @@ user's yes is the opt-in.
 ## Auto mode
 
 `--auto` anywhere in the input runs the whole chain without stopping at the
-questions. Review continues straight into Run; Harden continues
-straight into Run; Run with no invariant derives one with the
-first three Review steps, the action with the largest blast radius first;
-Run all writes the invariants it finds without asking.
-This is the mode for CI and for a user who has already decided.
+questions. Review continues straight into Run; Harden hardens every
+unguarded invariant in a row and continues into Run or Run all; Run with
+no invariant derives one with the first three Review steps, the action
+with the largest blast radius first; Run all writes the invariants it
+finds without asking. This is the mode for CI and for a user who has
+already decided.
 
 Three rules survive auto mode unchanged. The safety gate runs first and a
 production signal stops the chain, flag or no flag. The chain acts on one
 project, the current directory or the one named, never on a set found by
-listing a parent directory. Nothing is written into the project without
-consent: with no one to ask, the proof goes to a temporary workspace, as
-"Where the proof is written" says. Without `--auto`, every question stops
-and waits.
+listing a parent directory. Nothing leaves the user's hands without
+consent: with no one to ask, Run and Run all write the proof to a
+temporary workspace, as "Where the proof is written" says, and Harden
+prints the pull request commands instead of opening one. Without
+`--auto`, every question stops and waits.
 
 ## Where the proof is written
 
@@ -140,22 +142,59 @@ Do not change code in this mode.
 
 ## Harden
 
-1. Take the invariant from the user, from a review, or by running the first
-   three review steps for the one action in question.
-2. Place the guard next to the effect, using "Recovery patterns" in
-   `references/business-invariants.md`. Recompute from source data; separate
-   shape from authorization; fail closed; make refusal loud; mark degraded
-   output as degraded. Prefer the guard inside the adapter that performs
-   the effect, so a violating write is impossible rather than avoided.
-3. Write the gate test by the rules in `references/faultkit-execution.md`,
-   "The gate test": it asserts on the store, its message starts with
-   `SILENT FAILURE:`, it is green without a fault and red under one.
-4. Run the project's own tests. Do not run faultkit.
-5. Show the diff, the test, and one paragraph naming the invariant and the
-   boundary. Then ask one question and stop: whether to run faultkit now to
-   prove it, with the exact command. Wait for the answer, exactly as Review
-   step 8 does. With `--auto`, skip the question and continue with Run
-   at once.
+1. Count before changing anything. Take the invariants from the input, from
+   `.faultkit/invariants/manifest.json`, from a review in this conversation,
+   or from the first four Review steps. For each, answer Review step 3's two
+   questions against the current code, and add its last proof state when a
+   report exists in `.faultkit/reports/`. Show them as a list and close with
+   one line: `Invariants: <n> found, <u> not yet guarded.` With u = 0, say
+   so and end.
+2. When the input named one invariant, or u = 1, harden that one.
+   Otherwise ask one question and stop: harden them one at a time, stopping
+   after each for a go-ahead; all in a row without stopping; or wait for the
+   user's instruction on which ones and how? Wait for the answer; on "wait",
+   do nothing until the instruction comes. With `--auto`, harden all in a
+   row. In a non-interactive session without `--auto`, print the list and
+   the command with `--auto`, and end.
+3. For each invariant to harden, largest blast radius first:
+   - Place the guard next to the effect, using "Recovery patterns" in
+     `references/business-invariants.md`. Recompute from source data;
+     separate shape from authorization; fail closed; make refusal loud;
+     mark degraded output as degraded. Prefer the guard inside the adapter
+     that performs the effect, so a violating write is impossible rather
+     than avoided.
+   - Ensure the gate test by the rules in `references/faultkit-execution.md`,
+     "The gate test": it asserts on the store, its message starts with
+     `SILENT FAILURE:`, it is green without a fault and red under one. A
+     gate the manifest already names stays as it is.
+   - Run the project's own tests. Do not run faultkit.
+   - One at a time: show the diff, the test, and one paragraph naming the
+     invariant and the boundary, then ask whether to go on to the next one
+     and wait. On stop, go to step 4 with the ones done.
+4. Show the diff, the tests, and one paragraph per invariant naming it and
+   its boundary; after one at a time, one line each. Then ask one question
+   and stop: whether to run faultkit now to prove it, with Run for one
+   invariant or Run all for several, and the exact command. Wait for the
+   answer, exactly as Review step 8 does. With `--auto`, skip the question
+   and continue at once.
+5. Last, after the proof when one ran, ask one question and stop: open a
+   pull request with these changes? Wait for the answer. With `--auto` or in
+   a non-interactive session, do not ask and do not open one; print the
+   commands. On yes:
+   - Follow the project's own rules for branches, commits, and pull
+     requests (`CLAUDE.md`, `CONTRIBUTING.md`) where they exist.
+   - Never commit to the default branch. Create `faultkit/harden-<id>` for
+     one invariant, `faultkit/harden` for several.
+   - One commit per invariant, in the order hardened: its guard, its gate,
+     and its manifest entry when the proof is kept in the project, with a
+     message naming the invariant. When two invariants changed the same
+     lines, commit them together and name both.
+   - Push the branch and open the pull request with `gh pr create`. The
+     body lists each invariant with its guard at `file:line`, its gate
+     test, and its proof state, quoting the `=== proof ===` block or the
+     `=== run-all ===` table when a proof ran, and saying "not proven with
+     faultkit" when none did.
+   - Without `gh`, a remote, or push rights, say so and print the commands.
 
 ## Run
 
@@ -268,8 +307,7 @@ python3 <skill>/scripts/run_faultkit.py --verbose \
    faultkit's lines verbatim. Close with the helper's `=== run-all ===`
    table verbatim, then list every artifact created. The helper exits with
    the worst result. A silent failure confirmed on unhardened code is the
-   honest outcome of this mode; fixing it is Harden's job, one invariant at
-   a time.
+   honest outcome of this mode; fixing it is Harden's job.
 
 ## Red flags
 
@@ -285,6 +323,7 @@ python3 <skill>/scripts/run_faultkit.py --verbose \
 | "I'll add a second scenario and a conftest while I'm here." | One invariant, one scenario, the smallest gate. Every invariant at once is Run all, and only when asked. |
 | "This manifest entry is red; I'll loosen its scenario or gate so CI goes green." | Never. The entry states what must hold. Harden the code. |
 | "They said run it, so writing `.faultkit/` into the project is fine." | Running is not keeping. Ask where, or use a workspace. |
+| "The guards are in and the tests are green, so I'll push and open the PR." | Ask first; a pull request is published work. With `--auto`, print the commands. |
 | "Let me write hostile responses to see what breaks." | The catalog states the shapes. Match the code to a shape and pick the scenario. |
 | "This client probably honours the proxy." | Run once. The warning tells you. Then switch to `--base-url`. |
 | "The gate should skip without faultkit so it cannot pass vacuously." | Prefer green without a fault and red under one, so ordinary CI exercises the guard. |
