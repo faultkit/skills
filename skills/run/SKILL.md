@@ -10,4 +10,6 @@ Read `${CLAUDE_PLUGIN_ROOT}/faultkit/SKILL.md` and follow its **Run** mode for: 
 
 If `$ARGUMENTS` is empty, ask the user for the invariant and stop. Do not derive one and do not act on any directory. If `$ARGUMENTS` contains `--auto` and no invariant, derive one from the current project as the skill's Auto mode describes, then continue; the safety gate still runs first.
 
+Before writing any file, ask whether to keep the proof in the project (`.faultkit/`) or a temporary workspace, unless `.faultkit/invariants/manifest.json` already exists. With `--auto` or in a non-interactive session, do not ask: use a temporary workspace unless that manifest exists.
+
 The helper is `${CLAUDE_PLUGIN_ROOT}/faultkit/scripts/run_faultkit.py`.

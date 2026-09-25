@@ -1,6 +1,6 @@
 {
   "name": "faultkit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Find the silent failures in AI workflows from business invariants, harden the action boundary, and prove it with faultkit.",
   "author": { "name": "faultkit" },
   "homepage": "https://github.com/faultkit/skills",
