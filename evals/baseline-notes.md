@@ -39,9 +39,11 @@ Each fixture is the committed agent code with `README.md`, `scenario.yaml`,
 `run-faultkit.sh`, all tests and the walkthrough page removed, and the
 virtualenv or `node_modules` linked in. The code still carries its own
 docstrings and the `unsafe`/`guarded` mode switch; that is as far as
-stripping goes without rewriting the agents. Eval prompts point at
-`ai-resilience-workspace/fixtures/<agent>` and every run works in its own
-copy.
+stripping goes without rewriting the agents. Eval prompts name
+`fixtures/<agent>`, relative to the eval workspace
+(`ai-resilience-workspace/`), and every run works in its own copy. They
+reach faultkit through `$FAULTKIT`, which the harness points at the binary
+under test.
 
 ### Eval 0: review coldchain-dispatch-agent
 
