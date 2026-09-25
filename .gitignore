@@ -3,3 +3,6 @@ __pycache__/
 .pytest_cache/
 .venv/
 *.report.json
+
+# private working notes
+docs/marketplace-readiness.md
