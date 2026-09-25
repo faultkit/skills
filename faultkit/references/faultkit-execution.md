@@ -201,7 +201,6 @@ The helper still runs from the project root and replays it with
       "shape": "S2",
       "config": "triaged-only-when-model-classified.yaml",
       "base_url": true,
-      "provider": "openai",
       "gate": ["node", "--test", "test/triaged-only-when-model-classified.test.mjs"]
     }
   ]
@@ -216,7 +215,7 @@ The helper still runs from the project root and replays it with
 | `config` or `scenario` | exactly one | a scenario file relative to the manifest, or a builtin name |
 | `mode` | no | `auto` (default), `proxy`, `ebpf` |
 | `base_url` | no | `true` for `--base-url` injection |
-| `provider` | no | limit fixture-driven failure modes to one provider |
+| `provider` | no | narrow a builtin's fixture-driven failure modes to one provider; a custom scenario never needs it, and faultkit v0.1.2, the helper's pinned release, has no `--provider` |
 | `gate` | yes | the gate's command as an argv list, run from the project root without a shell |
 
 Rules:

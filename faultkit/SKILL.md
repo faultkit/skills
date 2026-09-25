@@ -236,6 +236,8 @@ found by listing a parent directory.
    it print the proof block. On a terminal the block is coloured; add
    `--color always` when the output is captured for a person to read. A
    builtin scenario takes `--scenario <name>` in place of `--config`.
+   `--provider` only narrows a builtin's failure modes; leave it out of a
+   custom scenario's run and its manifest entry.
 
 ```bash
 python3 <skill>/scripts/run_faultkit.py --verbose \
