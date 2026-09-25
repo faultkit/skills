@@ -16,8 +16,9 @@ business value -> unacceptable outcome -> invariant -> fault -> recovery -> proo
 Four modes share that chain. Review maps it and changes nothing. Harden
 adds the smallest guard and the test that locks it. Run turns an
 invariant into an injected fault and reports whether the proof held. Run
-all does that for every invariant in the project and keeps each one in
-`.faultkit/invariants/`, where CI can replay them.
+all does that for every invariant in the project and, with the user's
+consent, keeps each one in `.faultkit/invariants/`, where CI can replay
+them.
 
 ## Modes
 
@@ -43,11 +44,38 @@ first three Review steps, the action with the largest blast radius first;
 Run all writes the invariants it finds without asking.
 This is the mode for CI and for a user who has already decided.
 
-Two rules survive auto mode unchanged. The safety gate runs first and a
+Three rules survive auto mode unchanged. The safety gate runs first and a
 production signal stops the chain, flag or no flag. The chain acts on one
 project, the current directory or the one named, never on a set found by
-listing a parent directory. Without `--auto`, every question stops and
-waits.
+listing a parent directory. Nothing is written into the project without
+consent: with no one to ask, the proof goes to a temporary workspace, as
+"Where the proof is written" says. Without `--auto`, every question stops
+and waits.
+
+## Where the proof is written
+
+Run and Run all produce a scenario, a gate test, a manifest entry, and a
+report per invariant. They go into the project only with the user's
+consent.
+
+| Location | When | Layout |
+| --- | --- | --- |
+| Project | the user chose it, or `.faultkit/invariants/manifest.json` already exists, which is that choice made earlier | `.faultkit/invariants/` (scenarios, `manifest.json`), `.faultkit/reports/`, gates in the project's test directory, `.faultkit/reports/` in `.gitignore` |
+| Workspace | otherwise, and always when no one can be asked: `--auto` or a non-interactive session | a new `mktemp -d -t faultkit-XXXXXX` directory `<ws>` with `invariants/`, `reports/`, and `tests/` for the gates; the project is not touched, not even `.gitignore` |
+
+Unless the manifest exists, ask before the first file is written: keep the
+scenarios, gates, and manifest in the project, where they can be committed
+and replayed in CI, or in a temporary workspace that leaves the project
+untouched? Ask once per conversation and wait for the answer. In the steps
+below, `.faultkit/` stands for the chosen location: the project's
+`.faultkit/`, or `<ws>/`.
+
+A gate in the workspace still runs from the project root. It imports the
+project's code by absolute path, or runs with the root on the import path
+(`python -m pytest <ws>/tests/...`), and its manifest `gate` uses the
+absolute path of the test. The project's own test configuration does not
+apply to it. End the report with the workspace path and say that the proof
+lives only there; running again and choosing the project keeps it.
 
 The references carry the method and the faultkit knowledge. Read the one
 the step names; do not reconstruct it by experiment.
@@ -145,7 +173,8 @@ found by listing a parent directory.
    account, a real provider key with a baseline that would spend it. If
    found, stop and say why. Confirm irreversible effects are fakes.
 2. Resolve the invariant and the target command: from the arguments, from
-   the project's test runner, or ask. One invariant per run.
+   the project's test runner, or ask. One invariant per run. Then decide
+   where the proof is written, by "Where the proof is written".
 3. Choose the scenario with `references/faultkit-scenarios.md`. Builtin when
    it expresses the fault; otherwise a custom file from the template in
    `references/faultkit-execution.md`, "Custom scenarios", at
@@ -157,8 +186,9 @@ found by listing a parent directory.
    path so the model passes through. Read the gotchas before writing a
    retry scenario.
 5. Ensure a deterministic gate exists. If no test asserts the invariant on
-   the side effect, write the smallest one in the project's runner. Not a
-   suite, not a conftest, not a second scenario.
+   the side effect, write the smallest one in the project's runner, in the
+   project's test directory or in `<ws>/tests/`. Not a suite, not a
+   conftest, not a second scenario.
 6. Record the invariant in `.faultkit/invariants/manifest.json` by the rules
    in `references/faultkit-execution.md`, "The invariant manifest": add its
    entry, or replace the entry with the same id. The manifest is what Run
@@ -215,15 +245,19 @@ project, the current directory or the one named, as Run does.
    line each with the reason; they get no entry.
 4. With new invariants, show them as a table (id, invariant, shape,
    scenario, mode, gate) and ask one question: write them and run the whole
-   manifest? Wait for the answer. With `--auto`, skip the question. In a
+   manifest, and, unless the manifest exists, keep them in the project or
+   in a temporary workspace? Wait for the answer. With `--auto`, skip the
+   question; the location follows "Where the proof is written". In a
    non-interactive session without `--auto`, print the table and the
    command with `--auto`, and end. With nothing new, go to step 6.
 5. For each new invariant, Run steps 3 to 6: scenario, mode, gate, manifest
    entry. One gate test per invariant, named after its id, so a red row
    names the invariant that broke.
-6. Run every entry with one helper call. Reports land in
+6. Run every entry with one helper call. In the project, reports land in
    `.faultkit/reports/`; add that directory to `.gitignore` when the project
    has one. The scenario files and the manifest are meant to be committed.
+   In a workspace, pass `--manifest <ws>/invariants/manifest.json
+   --reports-dir <ws>/reports`.
 
 ```bash
 python3 <skill>/scripts/run_faultkit.py --verbose \
@@ -250,6 +284,7 @@ python3 <skill>/scripts/run_faultkit.py --verbose \
 | "No fault fired, but the target passed, so fine." | That is invalid evidence, the most dangerous result there is. |
 | "I'll add a second scenario and a conftest while I'm here." | One invariant, one scenario, the smallest gate. Every invariant at once is Run all, and only when asked. |
 | "This manifest entry is red; I'll loosen its scenario or gate so CI goes green." | Never. The entry states what must hold. Harden the code. |
+| "They said run it, so writing `.faultkit/` into the project is fine." | Running is not keeping. Ask where, or use a workspace. |
 | "Let me write hostile responses to see what breaks." | The catalog states the shapes. Match the code to a shape and pick the scenario. |
 | "This client probably honours the proxy." | Run once. The warning tells you. Then switch to `--base-url`. |
 | "The gate should skip without faultkit so it cannot pass vacuously." | Prefer green without a fault and red under one, so ordinary CI exercises the guard. |

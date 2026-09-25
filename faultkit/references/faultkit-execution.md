@@ -45,8 +45,9 @@ Rules:
 - `response_body` verbatim, in the real service's shape, with nothing
   invented. A stale snapshot omits data; it does not fabricate any.
 - One scenario per invariant. A second failure mode is a second file.
-- Put the file under `.faultkit/invariants/<invariant-slug>.yaml` and record
-  it in the manifest; see "The invariant manifest".
+- Put the file under `.faultkit/invariants/<invariant-slug>.yaml`, or
+  `<ws>/invariants/` in a workspace, and record it in the manifest; see
+  "The invariant manifest".
 
 Three worked examples, one per shape that needs a custom scenario:
 
@@ -181,6 +182,14 @@ Every invariant a run proves is kept so that CI can replay all of them.
 `manifest.json`, which maps each invariant to its scenario, injection mode,
 and gate. Commit both. Reports go to `.faultkit/reports/`, which is not
 committed.
+
+This layout is written into the project only with the user's consent (see
+"Where the proof is written" in `SKILL.md`). Without it, the same layout
+lives in a temporary workspace `<ws>` made with `mktemp -d -t
+faultkit-XXXXXX`: `<ws>/invariants/`, `<ws>/reports/`, and the gates in
+`<ws>/tests/`, each gate's `gate` argv naming its test by absolute path.
+The helper still runs from the project root and replays it with
+`--manifest <ws>/invariants/manifest.json --reports-dir <ws>/reports`.
 
 ```json
 {

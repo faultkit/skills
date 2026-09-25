@@ -76,11 +76,15 @@ model stream must never dispatch a route. Add deterministic tests.
 
 ## The invariant manifest
 
-Each invariant the skill proves is kept in the project under
+Each invariant the skill proves can be kept in the project under
 `.faultkit/invariants/`: one faultkit scenario per invariant and a
 `manifest.json` mapping each one to its scenario, injection mode, and gate
-test. Commit the directory. Any machine, including CI, replays every
-invariant with one command and gets one proof state per invariant:
+test. The skill asks before writing it. Without a yes, and always with
+`--auto` or in a non-interactive session, it writes into a temporary
+workspace and leaves the project untouched; a project that already has a
+manifest has said yes. Commit the directory. Any machine, including CI,
+replays every invariant with one command and gets one proof state per
+invariant:
 
 ```bash
 python3 faultkit/scripts/run_faultkit.py --manifest .faultkit/invariants/manifest.json
