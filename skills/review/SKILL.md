@@ -8,4 +8,4 @@ Read `${CLAUDE_PLUGIN_ROOT}/faultkit/SKILL.md` and follow its **Review** mode fo
 
 Do not edit code in this mode. End by showing the report and asking whether to run faultkit against the proof plan, then wait for the answer.
 
-If `$ARGUMENTS` contains `--auto`, do not ask: continue into Run at once. The safety gate still runs first.
+If `$ARGUMENTS` contains `--auto`, do not ask: continue into Prove at once. The safety gate still runs first.

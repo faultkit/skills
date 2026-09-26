@@ -243,7 +243,7 @@ python3 <skill>/scripts/run_faultkit.py --verbose \
 
 With `--manifest`, it runs every entry of the manifest from the project
 root, one faultkit run each, writing `.faultkit/reports/<id>.report.json`.
-It prints a proof block per invariant and a closing `=== run-all ===` table,
+It prints a proof block per invariant and a closing `=== prove-all ===` table,
 and exits with the worst result: 2 if any run errored, else 3 if any
 injected nothing, else 1 if any silent failure was confirmed, else 0. A
 malformed manifest exits 4 before anything runs.

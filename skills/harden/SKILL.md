@@ -8,4 +8,4 @@ Read `${CLAUDE_PLUGIN_ROOT}/faultkit/SKILL.md` and follow its **Harden** mode fo
 
 Start by counting the invariants. When more than one is unguarded, ask whether to harden them one at a time, all in a row, or on the user's instruction, and wait for the answer. End by asking whether to run faultkit to prove it, then whether to open a pull request, waiting for each answer.
 
-If `$ARGUMENTS` contains `--auto`, do not ask: harden every unguarded invariant, continue into Run or Run all, and print the pull request commands instead of opening one. The safety gate still runs first.
+If `$ARGUMENTS` contains `--auto`, do not ask: harden every unguarded invariant, continue into Prove or Prove all, and print the pull request commands instead of opening one. The safety gate still runs first.
