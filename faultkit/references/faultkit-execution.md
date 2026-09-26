@@ -215,7 +215,7 @@ The helper still runs from the project root and replays it with
 | `config` or `scenario` | exactly one | a scenario file relative to the manifest, or a builtin name |
 | `mode` | no | `auto` (default), `proxy`, `ebpf` |
 | `base_url` | no | `true` for `--base-url` injection |
-| `provider` | no | narrow a builtin's fixture-driven failure modes to one provider; a custom scenario never needs it, and faultkit v0.1.2, the helper's pinned release, has no `--provider` |
+| `provider` | no | narrow a builtin's fixture-driven failure modes to one provider; a custom scenario never needs it; `--provider` needs faultkit v0.1.3 or later |
 | `gate` | yes | the gate's command as an argv list, run from the project root without a shell |
 
 Rules:
@@ -243,7 +243,7 @@ python3 <skill>/scripts/run_faultkit.py --verbose \
 
 With `--manifest`, it runs every entry of the manifest from the project
 root, one faultkit run each, writing `.faultkit/reports/<id>.report.json`.
-It prints a proof block per invariant and a closing `=== run-all ===` table,
+It prints a proof block per invariant and a closing `=== prove-all ===` table,
 and exits with the worst result: 2 if any run errored, else 3 if any
 injected nothing, else 1 if any silent failure was confirmed, else 0. A
 malformed manifest exits 4 before anything runs.
@@ -288,7 +288,8 @@ should read `invariant proven under fault`. Anything else is not done yet.
 - Runs stay in local, test, or explicitly authorized environments. Before
   running, look for production signals: deploy variables, non-local database
   URLs, a `.env` naming a live account, a real provider key with a baseline
-  that would spend it. If found, stop and say why.
+  that would spend it. Judge by names and hosts; never print, copy, or send a
+  secret's value. If found, stop and say why.
 - Irreversible side effects must be fakes: a JSONL ledger, an in-memory
   store, a sandbox account.
 - The runner downloads only the pinned version from the fixed releases URL,

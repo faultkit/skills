@@ -39,7 +39,7 @@ from typing import Callable, Optional
 
 # Bumped deliberately, never resolved from "latest". faultkit's own supply-chain
 # rule asks for roughly ten days of cooldown before adopting a new release.
-PINNED_VERSION = "v0.1.2"
+PINNED_VERSION = "v0.1.3"
 RELEASES_URL = "https://github.com/faultkit/faultkit/releases/download"
 DEFAULT_CACHE = Path.home() / ".cache" / "faultkit"
 
@@ -294,7 +294,7 @@ def render_proof(scenario: str, mode: str, fired: int, exit_code: int, state: st
 def render_summary(rows: list[tuple[str, int, int, str]], color: bool) -> str:
     """rows: (invariant id, faults fired, target exit, proof state)."""
     width = max(len("invariant"), *(len(row[0]) for row in rows))
-    lines = [paint("=== run-all ===", "bold", color), f"{'invariant':<{width}}  fired  exit  proof state"]
+    lines = [paint("=== prove-all ===", "bold", color), f"{'invariant':<{width}}  fired  exit  proof state"]
     for ident, fired, exit_code, state in rows:
         lines.append(f"{ident:<{width}}  {fired:>5}  {exit_code:>4}  {paint(state, state_color(state), color)}")
     return "\n".join(lines)

@@ -269,7 +269,7 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(code, rf.EXIT_TARGET_FAILED)
         self.assertEqual(sorted(p.name for p in reports.iterdir()), ["no-auto-route.report.json", "second.report.json"])
         self.assertIn(str(manifest.parent / "no-auto-route.yaml"), out)
-        self.assertIn("=== run-all ===", out)
+        self.assertIn("=== prove-all ===", out)
 
     def test_bad_manifest_is_a_usage_error(self):
         manifest = self.tmp / "manifest.json"

@@ -134,6 +134,27 @@ release, in that order. It never resolves "latest".
 Runs stay in local, test, or explicitly authorized environments, with real
 irreversible side effects replaced by fakes.
 
+## Network access
+
+The plugin's own code makes one outbound call, and only in Run and Run all:
+when no faultkit binary is available, `faultkit/scripts/run_faultkit.py`
+downloads the pinned release from
+`https://github.com/faultkit/faultkit/releases/download/<version>/`, verifies
+it against that release's `checksums.txt`, and caches it under
+`~/.cache/faultkit/<version>/`. Nothing about you or your project is sent.
+There is no telemetry.
+
+To opt out, provide the binary yourself: install faultkit (Homebrew, AUR,
+`go install`), set `FAULTKIT=/path/to/faultkit`, or pass `--faultkit-bin`.
+The helper then makes no network call.
+
+Two more things reach the network, both under your control. Harden pushes a
+branch and opens a pull request on your project's own remote only after you
+say yes, and never with `--auto`. The test command being proven runs as it
+normally would: faultkit proxies its HTTP(S) traffic locally through a
+per-run CA scoped to that process, synthetic faults never reach the real
+provider, and requests that no fault matches go where your code sends them.
+
 ## Layout
 
 - `faultkit/SKILL.md`: the skill, with its four modes

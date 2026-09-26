@@ -1,15 +1,13 @@
 ---
 name: run
-description: Generates or selects a faultkit scenario for a business invariant, writes the deterministic gate test if the project lacks one, obtains faultkit, runs it locally, and reports the proof state. Only runs when invoked by the user.
+description: Same as prove-all. Finds every business invariant in the project that a fault can express, keeps each as a faultkit scenario and gate in .faultkit/invariants/, runs them all locally, and reports one proof state per invariant. Only runs when invoked by the user.
 disable-model-invocation: true
-argument-hint: "[--auto] [invariant or scenario] [-- test command]"
+argument-hint: "[--auto] [project path]"
 allowed-tools: Bash Read Write Edit Grep Glob
 ---
 
-Read `${CLAUDE_PLUGIN_ROOT}/faultkit/SKILL.md` and follow its **Run** mode for: $ARGUMENTS
+Read `${CLAUDE_PLUGIN_ROOT}/faultkit/SKILL.md` and follow its **Prove all** mode for: $ARGUMENTS
 
-If `$ARGUMENTS` is empty, ask the user for the invariant and stop. Do not derive one and do not act on any directory. If `$ARGUMENTS` contains `--auto` and no invariant, derive one from the current project as the skill's Auto mode describes, then continue; the safety gate still runs first.
-
-Before writing any file, ask whether to keep the proof in the project (`.faultkit/`) or a temporary workspace, unless `.faultkit/invariants/manifest.json` already exists. With `--auto` or in a non-interactive session, do not ask: use a temporary workspace unless that manifest exists.
+Before writing new invariants, show them, ask whether to write them and whether to keep them in the project or a temporary workspace, and wait for the answer. If `$ARGUMENTS` contains `--auto`, do not ask; write into a temporary workspace unless `.faultkit/invariants/manifest.json` already exists. The safety gate still runs first.
 
 The helper is `${CLAUDE_PLUGIN_ROOT}/faultkit/scripts/run_faultkit.py`.
