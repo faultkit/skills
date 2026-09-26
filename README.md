@@ -21,12 +21,12 @@ way to prove the result.
 | --- | --- | --- |
 | Review | Assess, explain, or plan | Maps value, boundaries, silent failures, invariants, and residual risk, and ends with how many invariants faultkit can prove. Changes no code. |
 | Harden | Build or fix a workflow | Counts the invariants, asks whether to harden them one at a time, all in a row, or on your instruction, adds the smallest deterministic guard at each action boundary and the test that locks it, and asks before opening a pull request. |
-| Run | Explicitly requested fault injection | Selects or generates a faultkit scenario, writes the gate test if missing, obtains faultkit, runs it locally, reports the proof state. Keeps the proof in `.faultkit/invariants/` if you agree, otherwise in a temporary workspace. |
-| Run all | Explicitly requested, whole project | Adds every invariant a fault can express to the manifest, runs them all, reports one proof state per invariant. Same choice of where the proof is kept. |
+| Prove | Explicitly requested fault injection | Selects or generates a faultkit scenario, writes the gate test if missing, obtains faultkit, runs it locally, reports the proof state. Keeps the proof in `.faultkit/invariants/` if you agree, otherwise in a temporary workspace. |
+| Prove all | Explicitly requested, whole project | Adds every invariant a fault can express to the manifest, runs them all, reports one proof state per invariant. Same choice of where the proof is kept. |
 
-Run and Run all are opt-in. Ordinary use of the skill neither installs tools nor
+Prove and Prove all are opt-in. Ordinary use of the skill neither installs tools nor
 injects faults. Review ends by asking whether to run faultkit for the primary
-invariant, and names `/faultkit:run-all` when there are more. Harden ends by
+invariant, and names `/faultkit:prove-all` when there are more. Harden ends by
 asking whether to prove the change, then whether to open a pull request. Each
 question waits for your answer. Add `--auto` to any command to run the whole
 chain without stopping at the questions. The safety gate still runs first, a
@@ -42,9 +42,10 @@ one.
 /plugin install faultkit@faultkit
 ```
 
-Then `/faultkit:review`, `/faultkit:harden`, `/faultkit:run`, and
-`/faultkit:run-all` are available. The first two also trigger on their
-own when a conversation turns to resilience; `run` and `run-all` run only
+Then `/faultkit:review`, `/faultkit:harden`, `/faultkit:prove`, and
+`/faultkit:prove-all` are available, plus `/faultkit:run`, which does the
+same as `prove-all`. The first two also trigger on their own when a
+conversation turns to resilience; `prove`, `prove-all`, and `run` run only
 when you invoke them.
 
 To pick up a new version:
@@ -79,11 +80,11 @@ model stream must never dispatch a route. Add deterministic tests.
 ```
 
 ```text
-/faultkit:run a paid invoice is never sent to collections -- pytest -q
+/faultkit:prove a paid invoice is never sent to collections -- pytest -q
 ```
 
 ```text
-/faultkit:run-all
+/faultkit:prove-all
 ```
 
 ## The invariant manifest
@@ -136,7 +137,7 @@ irreversible side effects replaced by fakes.
 
 ## Network access
 
-The plugin's own code makes one outbound call, and only in Run and Run all:
+The plugin's own code makes one outbound call, and only in Prove and Prove all:
 when no faultkit binary is available, `faultkit/scripts/run_faultkit.py`
 downloads the pinned release from
 `https://github.com/faultkit/faultkit/releases/download/<version>/`, verifies
