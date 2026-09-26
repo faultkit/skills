@@ -6,6 +6,11 @@ Never present a roadmap scenario as shipped.
 
 ## Builtin scenarios
 
+Builtins fire at 5 to 20% of matched requests, like a real outage, so most
+runs of a builtin inject nothing. For a proof, pin its failure mode at
+`probability: 1.0` in a file; see `faultkit-execution.md`, "Custom
+scenarios".
+
 | Scenario | Mode | Catalog shape | Example invariant | Notes |
 | --- | --- | --- | --- | --- |
 | `llm-api-degraded` | proxy | S2, S6 | a fallback result is never auto-routed; at most one charge per order | 429/503/timeout across OpenAI, Anthropic, Bedrock; narrow with `--provider` |
