@@ -215,7 +215,7 @@ The helper still runs from the project root and replays it with
 | `config` or `scenario` | exactly one | a scenario file relative to the manifest, or a builtin name |
 | `mode` | no | `auto` (default), `proxy`, `ebpf` |
 | `base_url` | no | `true` for `--base-url` injection |
-| `provider` | no | narrow a builtin's fixture-driven failure modes to one provider; a custom scenario never needs it, and faultkit v0.1.2, the helper's pinned release, has no `--provider` |
+| `provider` | no | narrow a builtin's fixture-driven failure modes to one provider; a custom scenario never needs it; `--provider` needs faultkit v0.1.3 or later |
 | `gate` | yes | the gate's command as an argv list, run from the project root without a shell |
 
 Rules:

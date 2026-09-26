@@ -39,7 +39,7 @@ from typing import Callable, Optional
 
 # Bumped deliberately, never resolved from "latest". faultkit's own supply-chain
 # rule asks for roughly ten days of cooldown before adopting a new release.
-PINNED_VERSION = "v0.1.2"
+PINNED_VERSION = "v0.1.3"
 RELEASES_URL = "https://github.com/faultkit/faultkit/releases/download"
 DEFAULT_CACHE = Path.home() / ".cache" / "faultkit"
 

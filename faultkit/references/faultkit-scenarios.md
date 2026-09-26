@@ -1,7 +1,7 @@
 # faultkit scenarios
 
 The installed binary's `faultkit scenario list` is authoritative. Run it
-before choosing; this table describes v0.1.2 and will lag behind releases.
+before choosing; this table describes v0.1.3 and will lag behind releases.
 Never present a roadmap scenario as shipped.
 
 ## Builtin scenarios
