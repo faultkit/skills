@@ -35,6 +35,22 @@ experiments:
     probability: 1.0
 ```
 
+When a builtin expresses the fault, pin its failure mode instead of writing
+a body. Copy the experiment from `faultkit scenario show <builtin>` and raise
+its probability; faultkit still sends each provider's own response:
+
+```yaml
+name: <invariant-slug>
+description: <builtin> pinned at probability 1.0
+experiments:
+  - name: <fault-name>
+    failure: <the builtin's failure mode>
+    probability: 1.0
+```
+
+Add `provider: <id>` to narrow it to one provider. The rate-limit mode keeps
+the builtin's `Retry-After: 30`; for a retry path, see the gotchas.
+
 Rules:
 
 - `probability: 1.0`. Determinism is the point. A run that fires sometimes
@@ -212,7 +228,7 @@ The helper still runs from the project root and replays it with
 | `id` | yes | kebab-case slug; names the scenario file, the gate test, and the report |
 | `invariant` | yes | one sentence over observable state |
 | `shape` | no | silent-failure shape, S1 to S8 |
-| `config` or `scenario` | exactly one | a scenario file relative to the manifest, or a builtin name |
+| `config` or `scenario` | exactly one | a scenario file relative to the manifest, or a builtin name (a sample, not a proof: builtins fire at 5 to 20%) |
 | `mode` | no | `auto` (default), `proxy`, `ebpf` |
 | `base_url` | no | `true` for `--base-url` injection |
 | `provider` | no | narrow a builtin's fixture-driven failure modes to one provider; a custom scenario never needs it; `--provider` needs faultkit v0.1.3 or later |
@@ -231,7 +247,7 @@ Rules:
 
 `scripts/run_faultkit.py` acquires faultkit, runs the scenario, reads the
 JSON report, and prints the proof block. It exits with faultkit's own code.
-A builtin scenario takes `--scenario <name>` in place of `--config`.
+`--scenario <name>` runs a builtin as it is: a sample, not a proof.
 
 ```bash
 python3 <skill>/scripts/run_faultkit.py --verbose \

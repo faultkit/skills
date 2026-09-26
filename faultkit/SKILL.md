@@ -116,15 +116,15 @@ Do not change code in this mode.
 ## Silent-failure candidates   (shape, file:line, is there a check, does it gate)
 ## Invariants                  (one line each, over observable state)
 ## Smallest recovery           (per invariant, from the recovery patterns)
-## Proof plan                  (per invariant: gate test + faultkit scenario, builtin or custom)
+## Proof plan                  (per invariant: gate test + faultkit scenario, pinned builtin or custom)
 ## Residual risk
 ```
 
 6. Give the proof plan one line per invariant a fault can express. Name the
    builtin scenario from `references/faultkit-scenarios.md` when one
-   expresses the fault, and say "custom" with the boundary host and path
-   when none does. An invariant no fault expresses goes under residual
-   risk with the reason.
+   expresses the fault, pinned at `probability: 1.0` for the proof, and say
+   "custom" with the boundary host and path when none does. An invariant no
+   fault expresses goes under residual risk with the reason.
 7. Show the report. Close it with one count line, where n is the lines
    under Invariants and k the lines in the proof plan:
    `Invariants: <n> found, <k> provable with faultkit.` With k = 0, say so
@@ -215,11 +215,13 @@ found by listing a parent directory.
 2. Resolve the invariant and the target command: from the arguments, from
    the project's test runner, or ask. One invariant per run. Then decide
    where the proof is written, by "Where the proof is written".
-3. Choose the scenario with `references/faultkit-scenarios.md`. Builtin when
-   it expresses the fault; otherwise a custom file from the template in
-   `references/faultkit-execution.md`, "Custom scenarios", at
-   `.faultkit/invariants/<invariant-slug>.yaml`. One scenario,
-   `probability: 1.0`, the narrowest match that still fires.
+3. Choose the scenario with `references/faultkit-scenarios.md` and write it
+   to `.faultkit/invariants/<invariant-slug>.yaml` from
+   `references/faultkit-execution.md`, "Custom scenarios": the builtin's
+   failure mode pinned when one expresses the fault, a custom body when
+   none does. Never prove with a builtin by name: builtins fire at 5 to 20%,
+   so most runs inject nothing. One scenario, `probability: 1.0`, the
+   narrowest match that still fires.
 4. Choose the injection mode from the table in
    `references/faultkit-execution.md`. Node's fetch and filtered
    subprocesses need `--base-url`; a tool's backend is faulted on its own
@@ -235,16 +237,15 @@ found by listing a parent directory.
    all and CI replay.
 7. Run the helper with `--verbose`, so every fired fault is visible, and let
    it print the proof block. On a terminal the block is coloured; add
-   `--color always` when the output is captured for a person to read. A
-   builtin scenario takes `--scenario <name>` in place of `--config`.
-   `--provider` only narrows a builtin's failure modes; leave it out of a
-   custom scenario's run and its manifest entry.
+   `--color always` when the output is captured for a person to read.
+   Narrow a pinned failure mode to one provider with `provider:` in its
+   file, not with `--provider`.
 
 ```bash
 python3 <skill>/scripts/run_faultkit.py --verbose \
   --config .faultkit/invariants/<invariant-slug>.yaml \
   --report .faultkit/reports/<invariant-slug>.report.json \
-  [--base-url] [--provider <id>] \
+  [--base-url] \
   -- <test command>
 ```
 
@@ -322,6 +323,7 @@ python3 <skill>/scripts/run_faultkit.py --verbose \
 | "No invariant was given, so I'll derive one for every project I can see." | Prove with no input stops and asks. It never surveys directories. |
 | "The agent's summary says it held the action." | Read the ledger. Two agents in this skill's evaluation reported actions their tools had refused. |
 | "I'll set probability to 0.5 to be realistic." | Determinism is the point. A gate that fires sometimes is not a gate. |
+| "A builtin expresses it, so I'll run the builtin." | Builtins fire at 5 to 20%. Pin the failure mode at 1.0 in a file, or the proof is luck. |
 | "No fault fired, but the target passed, so fine." | That is invalid evidence, the most dangerous result there is. |
 | "I'll add a second scenario and a conftest while I'm here." | One invariant, one scenario, the smallest gate. Every invariant at once is Prove all, and only when asked. |
 | "This manifest entry is red; I'll loosen its scenario or gate so CI goes green." | Never. The entry states what must hold. Harden the code. |
