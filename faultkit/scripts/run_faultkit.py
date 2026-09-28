@@ -10,6 +10,9 @@ own exit code so shells and CI can branch on it:
     3  invalid evidence             (no fault fired; the target never reached faultkit)
     4  usage error
 
+A missing or malformed report is "error: report missing or malformed" and
+exits 2: a run counts as evidence only through faultkit's report/v1 file.
+
 With --manifest, runs every invariant in .faultkit/invariants/manifest.json
 (versions 1 and 2), prints a proof block per invariant and a summary, and
 exits with the worst result: 2 if any errored, else 3 if any injected
@@ -62,6 +65,9 @@ SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 FAULT_STATUS = ("generated", "not_generated")
 NOT_GENERATED = "fault not generated"
+
+REPORT_SCHEMA = "faultkit.dev/report/v1"
+REPORT_ERROR = "error: report missing or malformed"
 
 ANSI = {"reset": "\033[0m", "bold": "\033[1m", "green": "\033[32m", "red": "\033[31m", "yellow": "\033[33m", "magenta": "\033[35m", "dim": "\033[2m"}
 STATE_COLOR = [
@@ -273,21 +279,31 @@ def build_command(
     return command + ["--", *target]
 
 
-def run_one(command: list[str], report: Path) -> tuple[int, int]:
-    """Run faultkit and count fired faults. Returns (exit code, faults fired)."""
+def run_one(command: list[str], report: Path) -> tuple[int, Optional[int]]:
+    """Run faultkit. Returns (exit code, faults fired); fired is None when no valid report was written."""
     report.parent.mkdir(parents=True, exist_ok=True)
+    # A report left by an earlier run must never stand in for this one.
+    report.unlink(missing_ok=True)
     completed = subprocess.run(command)
+    return completed.returncode, read_fired(report)
+
+
+def read_fired(report: Path) -> Optional[int]:
+    """Faults fired, from a report/v1 file; None when it is missing or malformed."""
     try:
         with report.open(encoding="utf-8") as handle:
-            return completed.returncode, fired_count(json.load(handle))
-    except (OSError, ValueError) as exc:
-        # Counting 0 makes the proof state "invalid evidence", never a false pass.
-        print(f"warning: could not read report {report}: {exc}; counting 0 faults fired", file=sys.stderr)
-        return completed.returncode, 0
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("schema") != REPORT_SCHEMA:
+        return None
+    if not isinstance(data.get("events") or [], list):
+        return None
+    return fired_count(data)
 
 
 def fired_count(report: dict) -> int:
-    return sum(1 for event in report.get("events") or [] if event.get("fired"))
+    return sum(1 for event in report.get("events") or [] if isinstance(event, dict) and event.get("fired") is True)
 
 
 def proof_state(exit_code: int, fired: int) -> str:
@@ -301,6 +317,15 @@ def proof_state(exit_code: int, fired: int) -> str:
     if exit_code == EXIT_OK:
         return "invariant proven under fault"
     return f"error: faultkit exited {exit_code}"
+
+
+def evidence_state(exit_code: int, fired: Optional[int]) -> str:
+    """The proof state, with a faultkit crash and a missing report as errors, never as evidence."""
+    if exit_code not in (EXIT_OK, EXIT_TARGET_FAILED, EXIT_FAULT_NOT_FIRED):
+        return f"error: faultkit exited {exit_code}"
+    if fired is None:
+        return REPORT_ERROR
+    return proof_state(exit_code, fired)
 
 
 def aggregate_exit(states: list[str]) -> int:
@@ -334,13 +359,13 @@ def state_color(state: str) -> str:
     return next(c for prefix, c in STATE_COLOR if state.startswith(prefix))
 
 
-def render_proof(scenario: str, mode: str, fired: int, exit_code: int, state: str, report: str, color: bool) -> str:
+def render_proof(scenario: str, mode: str, fired: Optional[int], exit_code: int, state: str, report: str, color: bool) -> str:
     return "\n".join(
         [
             paint("=== proof ===", "bold", color),
             f"scenario:      {scenario}",
             f"mode:          {mode}",
-            f"faults fired:  {paint(str(fired), 'green' if fired else 'yellow', color)}",
+            f"faults fired:  {paint('-' if fired is None else str(fired), 'green' if fired else 'yellow', color)}",
             f"target exit:   {exit_code}",
             f"proof state:   {paint(state, state_color(state), color)}",
             f"report:        {report}",
@@ -428,7 +453,7 @@ def run_all(ns: argparse.Namespace, manifest: Manifest, binary: Path, color: boo
             mode=mode, base_url=e.get("base_url", False), provider=e.get("provider"), verbose=ns.verbose,
         )
         exit_code, fired = run_one(command, report)
-        state = proof_state(exit_code, fired)
+        state = evidence_state(exit_code, fired)
         print(render_proof(
             config or e["scenario"], "base-url" if e.get("base_url") else mode,
             fired, exit_code, state, str(report), color,
@@ -465,11 +490,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         mode=ns.mode, base_url=ns.base_url, provider=ns.provider, verbose=ns.verbose,
     )
     exit_code, fired = run_one(command, Path(ns.report))
+    state = evidence_state(exit_code, fired)
     print(render_proof(
         ns.config or ns.scenario, "base-url" if ns.base_url else ns.mode, fired, exit_code,
-        proof_state(exit_code, fired), ns.report, color,
+        state, ns.report, color,
     ), flush=True)
-    return exit_code
+    return EXIT_INTERNAL if state == REPORT_ERROR else exit_code
 
 
 if __name__ == "__main__":

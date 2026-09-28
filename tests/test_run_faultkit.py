@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "faultkit" / "scripts"))
 
@@ -67,6 +68,38 @@ class ProofTests(unittest.TestCase):
 
     def test_passing_target_with_nothing_fired_is_invalid(self):
         self.assertEqual(rf.proof_state(0, 0), "invalid evidence: nothing was injected")
+
+
+class ReportTests(unittest.TestCase):
+    def write(self, text):
+        path = Path(tempfile.mkdtemp()) / "r.json"
+        path.write_text(text)
+        return path
+
+    def test_a_report_v1_file_counts_fired_events(self):
+        path = self.write(json.dumps({"schema": rf.REPORT_SCHEMA, "events": [{"fired": True}, {"fired": False}, {"fired": 1}]}))
+        self.assertEqual(rf.read_fired(path), 1)
+
+    def test_missing_or_malformed_reports_read_as_none(self):
+        cases = {
+            "not json": "{",
+            "not an object": "[]",
+            "no schema": json.dumps({"events": [{"fired": True}]}),
+            "another schema": json.dumps({"schema": "other", "events": []}),
+            "events not a list": json.dumps({"schema": rf.REPORT_SCHEMA, "events": {"fired": True}}),
+        }
+        for name, text in cases.items():
+            with self.subTest(name):
+                self.assertIsNone(rf.read_fired(self.write(text)))
+        self.assertIsNone(rf.read_fired(Path("/nonexistent/r.json")))
+
+    def test_evidence_state_keeps_crashes_and_missing_reports_apart(self):
+        self.assertEqual(rf.evidence_state(2, None), "error: faultkit exited 2")
+        self.assertEqual(rf.evidence_state(4, 3), "error: faultkit exited 4")
+        self.assertEqual(rf.evidence_state(0, None), rf.REPORT_ERROR)
+        self.assertEqual(rf.evidence_state(3, None), rf.REPORT_ERROR)
+        self.assertEqual(rf.evidence_state(0, 1), "invariant proven under fault")
+        self.assertEqual(rf.evidence_state(1, 0), "invalid evidence: nothing was injected")
 
 
 class ResolveTests(unittest.TestCase):
@@ -278,10 +311,11 @@ class AggregateTests(unittest.TestCase):
         self.assertIn("gap" + " " * 12 + "-" + " " * 5 + "-  fault not generated", text)
 
 
-# A stand-in faultkit: writes a report with one fired event and exits with $FAKE_EXIT.
+# A stand-in faultkit: writes a report/v1 file with one fired event unless
+# $FAKE_NO_REPORT is set, and exits with $FAKE_EXIT.
 FAKE_FAULTKIT = """#!/bin/sh
 while [ $# -gt 0 ]; do
-  case $1 in --report) shift; printf '{"events":[{"fired":true}]}' > "$1";; --) break;; esac
+  case $1 in --report) shift; [ -n "$FAKE_NO_REPORT" ] || printf '{"schema":"faultkit.dev/report/v1","events":[{"fired":true}]}' > "$1";; --) break;; esac
   shift
 done
 exit "${FAKE_EXIT:-1}"
@@ -337,6 +371,25 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual([p.name for p in reports.iterdir()], ["no-auto-route.report.json"])
         self.assertIn("fault not generated: no injectable boundary", out)
         self.assertIn("fault not generated", out.split("=== prove-all ===")[1])
+
+    def test_a_stale_report_never_stands_in_for_a_missing_one(self):
+        report = self.tmp / "r.json"
+        report.write_text(json.dumps({"schema": rf.REPORT_SCHEMA, "events": [{"fired": True}]}))
+        with mock.patch.dict(os.environ, {"FAKE_NO_REPORT": "1", "FAKE_EXIT": "0"}):
+            code, out = self.main(["--config", "s.yaml", "--report", str(report), "--", "true"])
+        self.assertEqual(code, rf.EXIT_INTERNAL)
+        self.assertFalse(report.exists())
+        self.assertIn("faults fired:  -", out)
+        self.assertIn(rf.REPORT_ERROR, out)
+
+    def test_a_manifest_run_without_a_report_is_an_error(self):
+        manifest = self.tmp / ".faultkit" / "invariants" / "manifest.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(json.dumps({"version": 1, "invariants": [entry()]}))
+        with mock.patch.dict(os.environ, {"FAKE_NO_REPORT": "1", "FAKE_EXIT": "0"}):
+            code, out = self.main(["--manifest", str(manifest), "--reports-dir", str(self.tmp / "reports")])
+        self.assertEqual(code, rf.EXIT_INTERNAL)
+        self.assertIn(rf.REPORT_ERROR, out.split("=== prove-all ===")[1])
 
 
 if __name__ == "__main__":
