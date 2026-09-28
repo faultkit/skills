@@ -160,3 +160,20 @@ how to spot a fail-open `or`, that a fallback returning the primary's shape
 is dangerous. It found all of those alone. The skill makes the result
 consistent and cheap, and it carries the faultkit knowledge for models and
 environments where the docs are not on disk.
+
+## Declared values (evals 3 and 4)
+
+The values file did not exist when the baselines above were recorded, so
+none of them measure it.
+
+- **Eval 3** gives the collections fixture a `.faultkit/values.md` declaring
+  UO-1 and UO-2. It checks that Review:
+  - takes the chain from the file verbatim,
+  - reports outcome coverage,
+  - proposes undeclared outcomes without writing them,
+  - still ends on the proof question.
+- **Eval 4** runs the same prompt without the file. It checks:
+  - the `[inferred]` tag,
+  - the `none declared` count line,
+  - the compound closing question: save, prove, or both,
+  - that nothing was written.

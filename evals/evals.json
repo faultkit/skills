@@ -46,6 +46,35 @@
         "The summary or output reports faults fired greater than zero",
         "The summary or output contains a proof block with one of the three proof-state strings"
       ]
+    },
+    {
+      "id": 3,
+      "prompt": "Review fixtures/collections-agent for resilience. Do not change any code.",
+      "expected_output": "A declared-mode review. The Business value and Unacceptable outcomes come verbatim from fixtures/collections-agent/.faultkit/values.md and cite UO-1 and UO-2. An Outcome coverage section shows UO-1 covered and UO-2 uncovered with a reason. The count line starts 'Outcomes: 2 declared'. No file is written, and the closing question offers the proof.",
+      "files": ["evals/fixtures/collections-agent/.faultkit/values.md"],
+      "assertions": [
+        "Before the run, fixtures/collections-agent/.faultkit/values.md holds the content of evals/fixtures/collections-agent/.faultkit/values.md",
+        "The Business value line equals the file's '## Business value' text and the section is tagged [declared]",
+        "The Unacceptable outcomes lines are the file's outcomes verbatim, each citing its id, UO-1 and UO-2",
+        "The report has a '## Outcome coverage' section in which UO-1 names at least one invariant id and UO-2 is listed as uncovered with a reason",
+        "The count line has the form 'Outcomes: 2 declared, <c> covered[, <p> proposed]. Invariants: <n> found, <k> provable with faultkit.'",
+        "Any outcome the code implies beyond UO-1 and UO-2 appears under '## Undeclared outcomes' with a provisional id UO-new-<n> and a file:line, and the closing then adds the line naming /faultkit:values; with no such outcome, neither appears",
+        "No file under fixtures/collections-agent was created or modified; .faultkit/values.md is byte-for-byte unchanged",
+        "The closing question offers Prove for the primary invariant, naming its outcome, or Prove all; it does not offer to write the values file"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Review fixtures/collections-agent for resilience. Do not change any code.",
+      "expected_output": "An inferred-mode review of the same fixture without a values file. The chain is tagged [inferred], the count line says 'none declared', and the closing is one compound question offering to save the inferred values, prove the primary invariant, or both. No file is written.",
+      "files": [],
+      "assertions": [
+        "Before the run, fixtures/collections-agent/.faultkit/values.md does not exist",
+        "The Business value and Unacceptable outcomes section is tagged [inferred]",
+        "The count line has the form 'Outcomes: <d> inferred, none declared. Invariants: <n> found, <k> provable with faultkit.'",
+        "The closing is a single compound question offering to save the inferred business value and outcomes to .faultkit/values.md, to prove the primary invariant now, or both",
+        "No file was written: .faultkit/values.md does not exist after the run and nothing under the fixture changed"
+      ]
     }
   ]
 }
