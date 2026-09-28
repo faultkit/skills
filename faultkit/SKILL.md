@@ -78,9 +78,10 @@ consent.
 Unless the manifest exists, ask before the first file is written: keep the
 scenarios, gates, and manifest in the project, where they can be committed
 and replayed in CI, or in a temporary workspace that leaves the project
-untouched? Ask once per conversation and wait for the answer. In the steps
-below, `.faultkit/` stands for the chosen location: the project's
-`.faultkit/`, or `<ws>/`.
+untouched? Ask once per conversation and wait for the answer. With no one
+to ask, `--auto` or a non-interactive session, do not ask: use the
+workspace and continue. In the steps below, `.faultkit/` stands for the
+chosen location: the project's `.faultkit/`, or `<ws>/`.
 
 A gate in the workspace still runs from the project root. It imports the
 project's code by absolute path, or runs with the root on the import path
