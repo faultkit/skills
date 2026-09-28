@@ -256,13 +256,38 @@ deterministic fault can express yet. Every entry carries `fault_status`:
 }
 ```
 
+Version 3 links each invariant to the outcome it protects, as declared in
+`.faultkit/values.md` (`references/values.md`):
+
+```json
+{
+  "version": 3,
+  "values": ".faultkit/values.md",
+  "invariants": [
+    {
+      "id": "paid-invoice-never-escalated",
+      "outcome": "UO-1",
+      "invariant": "A paid invoice is never sent to collections.",
+      "shape": "S3",
+      "fault_status": "generated",
+      "config": "paid-invoice-never-escalated.yaml",
+      "gate": ["pytest", "-q", "tests/test_paid_invoice.py"]
+    }
+  ]
+}
+```
+
 | Field | Required | Meaning |
 | --- | --- | --- |
+| `values` (top level) | version 3: no | the values file, relative to the repository root; without it, `.faultkit/values.md` is used when it exists |
+| `registry` (top level) | version 3: no | reserved for the scenario registry: an `https` `url` and a 40-hex commit `ref` |
 | `id` | yes | kebab-case slug; names the scenario file, the gate test, and the report |
 | `invariant` | yes | one sentence over observable state |
 | `fault_status` | version 2: yes; version 1: never | `generated` (a scenario and a gate) or `not_generated` (no deterministic fault yet) |
 | `fault_reason` | `not_generated`: yes | why no deterministic fault could be built |
 | `shape` | no | silent-failure shape, S1 to S8 |
+| `outcome` | version 3: no | the declared outcome this invariant protects, `UO-n`; several invariants may share one |
+| `source` | version 3: no | reserved for a vendored registry scenario: `registry`, `id`, `version`, and the `sha256` of the `config` file, checked before any run |
 | `config` or `scenario` | `generated`: exactly one; `not_generated`: neither | a scenario file relative to the manifest, or a builtin name (a sample, not a proof: builtins fire at 5 to 20%) |
 | `mode` | no | `auto` (default), `proxy`, `ebpf` |
 | `base_url` | no | `true` for `--base-url` injection |
@@ -285,6 +310,12 @@ Rules:
   listed, and it is proven once a deterministic fault exists.
 - `config` is a path relative to the manifest's directory and must stay
   inside it, symlinks included.
+- `values`, `registry`, `outcome`, and `source` need version 3. A version 1
+  or 2 manifest that carries one is an error naming the field. Write
+  version 3 when the first of them is recorded; a manifest that needs none
+  keeps its version.
+- Every `outcome` must be declared in the values file. An `outcome` with no
+  values file is a dangling reference, and the helper exits 4.
 
 ## Running with the helper
 

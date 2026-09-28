@@ -194,6 +194,16 @@ class ArgTests(unittest.TestCase):
             with self.subTest(extra=extra), self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
                 rf.parse_args(["--manifest", "m.json", *extra])
 
+    def test_values_needs_manifest(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            rf.parse_args(["--values", "v.md", "--config", "s.yaml", "--report", "r.json", "--", "true"])
+        ns, _ = rf.parse_args(["--manifest", "m.json", "--values", "v.md"])
+        self.assertEqual(ns.values, "v.md")
+
+
+def sha256_of(text):
+    return hashlib.sha256(text.encode()).hexdigest()
+
 
 def entry(**overrides):
     base = {"id": "no-auto-route", "invariant": "never auto-route a guess", "config": "no-auto-route.yaml", "gate": ["node", "--test"]}
@@ -272,6 +282,100 @@ class ManifestTests(unittest.TestCase):
     def test_unreadable_manifest_is_a_manifest_error(self):
         with self.assertRaises(rf.ManifestError):
             rf.load_manifest(Path("/nonexistent/manifest.json"))
+
+
+class ManifestV3Tests(unittest.TestCase):
+    SCENARIO = "experiments: []\n"
+
+    def load(self, data):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "manifest.json"
+            (Path(tmp) / "registry").mkdir()
+            (Path(tmp) / "registry" / "openai-503@1.0.0.yaml").write_text(self.SCENARIO)
+            path.write_text(json.dumps(data))
+            return rf.load_manifest(path)
+
+    def source(self, **overrides):
+        base = {"registry": "faultkit", "id": "openai-503", "version": "1.0.0", "sha256": sha256_of(self.SCENARIO)}
+        base.update(overrides)
+        return base
+
+    def test_v3_fields_load(self):
+        manifest = self.load({
+            "version": 3,
+            "values": ".faultkit/values.md",
+            "registry": {"url": "https://github.com/faultkit/registry", "ref": "a" * 40},
+            "invariants": [
+                entry(fault_status="generated", outcome="UO-1"),
+                entry(id="vendored", fault_status="generated", config="registry/openai-503@1.0.0.yaml", source=self.source()),
+                gap(outcome="UO-2"),
+            ],
+        })
+        self.assertEqual((manifest.version, manifest.values), (3, ".faultkit/values.md"))
+        self.assertEqual(manifest.registry["ref"], "a" * 40)
+        self.assertEqual([e.get("outcome") for e in manifest.entries], ["UO-1", None, "UO-2"])
+
+    def test_invalid_v3_manifests_are_rejected(self):
+        cases = {
+            "outcome in v2": {"version": 2, "invariants": [entry(fault_status="generated", outcome="UO-1")]},
+            "values in v2": {"version": 2, "values": "v.md", "invariants": [entry(fault_status="generated")]},
+            "source in v1": {"version": 1, "invariants": [entry(source={})]},
+            "registry in v1": {"version": 1, "registry": {}, "invariants": [entry()]},
+            "v3 without fault_status": {"version": 3, "invariants": [entry()]},
+            "outcome without a dash": {"version": 3, "invariants": [entry(fault_status="generated", outcome="UO1")]},
+            "absolute values path": {"version": 3, "values": "/etc/values.md", "invariants": [entry(fault_status="generated")]},
+            "registry over http": {"version": 3, "registry": {"url": "http://example.com", "ref": "a" * 40}, "invariants": [entry(fault_status="generated")]},
+            "registry on a branch": {"version": 3, "registry": {"url": "https://github.com/faultkit/registry", "ref": "main"}, "invariants": [entry(fault_status="generated")]},
+            "source on not_generated": {"version": 3, "invariants": [gap(source=self.source())]},
+            "source on a builtin": {"version": 3, "invariants": [entry(fault_status="generated", config=None, scenario="llm-api-degraded", source=self.source())]},
+            "source without semver": {"version": 3, "invariants": [entry(fault_status="generated", config="registry/openai-503@1.0.0.yaml", source=self.source(version="1.0"))]},
+            "source sha256 mismatch": {"version": 3, "invariants": [entry(fault_status="generated", config="registry/openai-503@1.0.0.yaml", source=self.source(sha256="0" * 64))]},
+        }
+        for name, data in cases.items():
+            with self.subTest(name), self.assertRaises(rf.ManifestError):
+                self.load(data)
+
+
+class OutcomeCheckTests(unittest.TestCase):
+    VALUES = "## Business value\nv\n\n## Unacceptable outcomes\n- UO-1: a\n- UO-2: b\n"
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def manifest(self, *entries, values=None):
+        return rf.Manifest(version=3, entries=list(entries), values=values)
+
+    def test_resolution_order(self):
+        (self.tmp / ".faultkit").mkdir()
+        (self.tmp / ".faultkit" / "values.md").write_text(self.VALUES)
+        m = self.manifest(values="docs/values.md")
+        self.assertEqual(rf.resolve_values("x.md", m, self.tmp), Path("x.md"))
+        self.assertEqual(rf.resolve_values(None, m, self.tmp), self.tmp / "docs" / "values.md")
+        self.assertEqual(rf.resolve_values(None, self.manifest(), self.tmp), self.tmp / ".faultkit" / "values.md")
+        self.assertIsNone(rf.resolve_values(None, self.manifest(), self.tmp / "elsewhere"))
+
+    def test_declared_outcomes_pass(self):
+        path = self.tmp / "values.md"
+        path.write_text(self.VALUES)
+        values = rf.check_outcomes(self.manifest({"id": "a", "outcome": "UO-2"}, {"id": "b"}), path)
+        self.assertEqual([o.id for o in values.outcomes], ["UO-1", "UO-2"])
+
+    def test_an_undeclared_outcome_is_an_error(self):
+        path = self.tmp / "values.md"
+        path.write_text(self.VALUES)
+        with self.assertRaises(rf.ManifestError):
+            rf.check_outcomes(self.manifest({"id": "a", "outcome": "UO-3"}), path)
+
+    def test_a_dangling_outcome_is_an_error(self):
+        with self.assertRaises(rf.ManifestError) as ctx:
+            rf.check_outcomes(self.manifest({"id": "a", "outcome": "UO-1"}), self.tmp / "missing.md")
+        self.assertIn("dangling outcome reference", str(ctx.exception))
+        with self.assertRaises(rf.ManifestError):
+            rf.check_outcomes(self.manifest({"id": "a", "outcome": "UO-1"}), None)
+
+    def test_no_outcomes_and_no_file_means_no_values(self):
+        self.assertIsNone(rf.check_outcomes(self.manifest({"id": "a"}), self.tmp / "missing.md"))
+        self.assertIsNone(rf.check_outcomes(self.manifest({"id": "a"}), None))
 
 
 class CommandTests(unittest.TestCase):
@@ -393,6 +497,20 @@ class EndToEndTests(unittest.TestCase):
             code, out = self.main(["--manifest", str(manifest), "--reports-dir", str(self.tmp / "reports")])
         self.assertEqual(code, rf.EXIT_INTERNAL)
         self.assertIn(rf.REPORT_ERROR, out.split("=== prove-all ===")[1])
+
+    def test_a_dangling_outcome_is_a_usage_error(self):
+        manifest = self.tmp / "manifest.json"
+        manifest.write_text(json.dumps({"version": 3, "invariants": [entry(fault_status="generated", outcome="UO-1")]}))
+        code, _ = self.main(["--manifest", str(manifest), "--values", str(self.tmp / "missing.md")])
+        self.assertEqual(code, rf.EXIT_USAGE)
+
+    def test_a_bad_values_file_is_a_usage_error(self):
+        manifest = self.tmp / "manifest.json"
+        manifest.write_text(json.dumps({"version": 3, "invariants": [entry(fault_status="generated", outcome="UO-1")]}))
+        values = self.tmp / "values.md"
+        values.write_text("## Business value\nv\n")
+        code, _ = self.main(["--manifest", str(manifest), "--values", str(values)])
+        self.assertEqual(code, rf.EXIT_USAGE)
 
 
 class ValuesTests(unittest.TestCase):

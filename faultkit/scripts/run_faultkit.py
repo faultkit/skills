@@ -14,11 +14,15 @@ A missing or malformed report is "error: report missing or malformed" and
 exits 2: a run counts as evidence only through faultkit's report/v1 file.
 
 With --manifest, runs every invariant in .faultkit/invariants/manifest.json
-(versions 1 and 2), prints a proof block per invariant and a summary, and
+(versions 1, 2, and 3), prints a proof block per invariant and a summary, and
 exits with the worst result: 2 if any errored, else 3 if any injected
 nothing, else 1 if any silent failure was confirmed, else 0. An entry with
 fault_status "not_generated" never runs and never changes the exit code.
 A bad manifest exits 4.
+
+With a values file (--values, else the manifest's "values", else
+.faultkit/values.md when it exists), every entry's "outcome" must be
+declared in it; a bad values file or a dangling outcome exits 4.
 
 Binary resolution, first match wins: --faultkit-bin, $FAULTKIT, faultkit on
 PATH, --faultkit-source (go build), then a checksum-verified download of the
@@ -66,6 +70,13 @@ SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 FAULT_STATUS = ("generated", "not_generated")
 NOT_GENERATED = "fault not generated"
 
+V3_TOP = ("values", "registry")
+V3_ENTRY = ("outcome", "source")
+OUTCOME_ID = re.compile(r"^UO-\d+$")
+SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$")
+SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
+
 REPORT_SCHEMA = "faultkit.dev/report/v1"
 REPORT_ERROR = "error: report missing or malformed"
 
@@ -104,6 +115,8 @@ class Manifest:
 
     version: int
     entries: list[dict]
+    values: Optional[str] = None
+    registry: Optional[dict] = None
 
 
 class ValuesError(Exception):
@@ -253,15 +266,46 @@ def _check_not_generated(e: dict, where: str) -> None:
         raise ManifestError(f'{where}: "gate" must be the test command as a non-empty list of strings')
 
 
+def _check_source(e: dict, where: str, manifest_dir: Path) -> None:
+    """A vendored registry scenario: its provenance, and its file's sha256, checked offline."""
+    source = e["source"]
+    if e["fault_status"] != "generated" or "config" not in e:
+        raise ManifestError(f'{where}: "source" belongs to a generated entry with a "config" file')
+    fields_ok = isinstance(source, dict) and all(
+        isinstance(source.get(k), str) and source[k] for k in ("registry", "id", "version", "sha256")
+    )
+    if not fields_ok or not SLUG.match(source["id"]) or not SEMVER.match(source["version"]) or not SHA256_HEX.match(source["sha256"]):
+        raise ManifestError(f'{where}: "source" needs "registry", a kebab-case "id", a semver "version", and a hex "sha256"')
+    try:
+        actual = hashlib.sha256((manifest_dir / e["config"]).read_bytes()).hexdigest()
+    except OSError as exc:
+        raise ManifestError(f'{where}: cannot read "config" to check "source.sha256": {exc}') from None
+    if actual != source["sha256"]:
+        raise ManifestError(f'{where}: "config" has sha256 {actual}, not "source.sha256" {source["sha256"]}')
+
+
 def load_manifest(path: Path) -> Manifest:
     """Read and validate .faultkit/invariants/manifest.json; see faultkit-execution.md."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise ManifestError(f"cannot read {path}: {exc}") from None
-    if not isinstance(data, dict) or data.get("version") not in (1, 2):
-        raise ManifestError(f'{path}: "version" must be 1 or 2')
+    if not isinstance(data, dict) or data.get("version") not in (1, 2, 3):
+        raise ManifestError(f'{path}: "version" must be 1, 2, or 3')
     version = data["version"]
+    for name in V3_TOP:
+        if name in data and version < 3:
+            raise ManifestError(f'{path}: "{name}" needs "version": 3')
+    values = data.get("values")
+    if values is not None and (not isinstance(values, str) or not values or Path(values).is_absolute()):
+        raise ManifestError(f'{path}: "values" must be a path relative to the repository root')
+    registry = data.get("registry")
+    if registry is not None and (
+        not isinstance(registry, dict)
+        or not str(registry.get("url", "")).startswith("https://")
+        or not COMMIT_SHA.match(str(registry.get("ref", "")))
+    ):
+        raise ManifestError(f'{path}: "registry" needs an https "url" and a 40-hex commit "ref"')
     entries = data.get("invariants")
     if not isinstance(entries, list) or not entries:
         raise ManifestError(f'{path}: "invariants" must be a non-empty list')
@@ -275,6 +319,11 @@ def load_manifest(path: Path) -> Manifest:
         seen.add(e["id"])
         if not isinstance(e.get("invariant"), str) or not e["invariant"].strip():
             raise ManifestError(f'{where}: "invariant" must state the invariant')
+        for name in V3_ENTRY:
+            if name in e and version < 3:
+                raise ManifestError(f'{where}: "{name}" needs "version": 3')
+        if "outcome" in e and (not isinstance(e["outcome"], str) or not OUTCOME_ID.match(e["outcome"])):
+            raise ManifestError(f'{where}: "outcome" must look like UO-1')
         if version == 1:
             if "fault_status" in e:
                 raise ManifestError(f'{where}: "fault_status" needs "version": 2')
@@ -285,11 +334,13 @@ def load_manifest(path: Path) -> Manifest:
             _check_not_generated(e, where)
         else:
             _check_generated(e, where, path.parent)
+        if "source" in e:
+            _check_source(e, where, path.parent)
         if e.get("mode", "auto") not in MODES:
             raise ManifestError(f'{where}: "mode" must be one of {", ".join(MODES)}')
         if not isinstance(e.get("base_url", False), bool) or not isinstance(e.get("provider", ""), str):
             raise ManifestError(f'{where}: "base_url" must be true or false and "provider" a string')
-    return Manifest(version=version, entries=entries)
+    return Manifest(version=version, entries=entries, values=values, registry=registry)
 
 
 def _uncomment(lines: list[str]) -> list[str]:
@@ -406,6 +457,34 @@ def load_values(path: Path) -> Values:
     except (OSError, UnicodeDecodeError) as exc:
         raise ValuesError(f"cannot read {path}: {exc}") from None
     return parse_values(text, str(path))
+
+
+def resolve_values(explicit: Optional[str], manifest: Manifest, cwd: Path) -> Optional[Path]:
+    """--values, else the manifest's "values", else .faultkit/values.md when it exists, else None."""
+    if explicit:
+        return Path(explicit)
+    if manifest.values:
+        return cwd / manifest.values
+    default = cwd / VALUES_DEFAULT
+    return default if default.exists() else None
+
+
+def check_outcomes(manifest: Manifest, values_path: Optional[Path]) -> Optional[Values]:
+    """Load the values file and check every entry's "outcome" against it. None when there is no file."""
+    linked = [e for e in manifest.entries if "outcome" in e]
+    if values_path is None or not values_path.exists():
+        if linked:
+            where = f" at {values_path}" if values_path else ""
+            raise ManifestError(
+                f'dangling outcome reference: {linked[0]["id"]} names {linked[0]["outcome"]}, but no values file was found{where}'
+            )
+        return None
+    values = load_values(values_path)
+    declared = {outcome.id for outcome in values.outcomes}
+    for e in linked:
+        if e["outcome"] not in declared:
+            raise ManifestError(f'{e["id"]}: outcome {e["outcome"]} is not declared in {values_path}')
+    return values
 
 
 def build_command(
@@ -546,6 +625,10 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--report", help="where faultkit writes its JSON report")
     parser.add_argument("--manifest", help="run every invariant in this manifest instead of one scenario")
     parser.add_argument(
+        "--values",
+        help='with --manifest: the values file (default: the manifest\'s "values", else .faultkit/values.md)',
+    )
+    parser.add_argument(
         "--reports-dir", default=".faultkit/reports",
         help="with --manifest: where each invariant's report is written (default .faultkit/reports)",
     )
@@ -568,6 +651,8 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         help="colour the proof block (auto: when stdout is a terminal; NO_COLOR and FORCE_COLOR are honoured)",
     )
     ns = parser.parse_args(own)
+    if ns.values and not ns.manifest:
+        parser.error("--values needs --manifest")
     if ns.manifest:
         if ns.config or ns.scenario or ns.report or target or ns.base_url or ns.provider or ns.mode != "auto":
             parser.error("--manifest sets scenario, report, mode, and target per invariant; drop the other run flags")
@@ -581,7 +666,7 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     return ns, target
 
 
-def run_all(ns: argparse.Namespace, manifest: Manifest, binary: Path, color: bool) -> int:
+def run_all(ns: argparse.Namespace, manifest: Manifest, binary: Path, color: bool, values: Optional[Values] = None) -> int:
     manifest_dir = Path(ns.manifest).parent
     rows = []
     for e in manifest.entries:
@@ -611,11 +696,15 @@ def run_all(ns: argparse.Namespace, manifest: Manifest, binary: Path, color: boo
 
 def main(argv: Optional[list[str]] = None) -> int:
     ns, target = parse_args(sys.argv[1:] if argv is None else argv)
-    manifest = None
+    manifest, values = None, None
     if ns.manifest:
         try:
             manifest = load_manifest(Path(ns.manifest))
-        except ManifestError as exc:
+            values_path = resolve_values(ns.values, manifest, Path.cwd())
+            if ns.values and not values_path.exists():
+                raise ValuesError(f"values file {values_path} not found")
+            values = check_outcomes(manifest, values_path)
+        except (ManifestError, ValuesError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return EXIT_USAGE
     try:
@@ -629,7 +718,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     color = use_color(ns.color, sys.stdout.isatty(), dict(os.environ))
     if ns.manifest:
-        return run_all(ns, manifest, binary, color)
+        return run_all(ns, manifest, binary, color, values)
 
     command = build_command(
         binary, report=ns.report, target=target, config=ns.config, scenario=ns.scenario,
