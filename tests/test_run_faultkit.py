@@ -90,11 +90,19 @@ class ReportTests(unittest.TestCase):
             "no schema": json.dumps({"events": [{"fired": True}]}),
             "another schema": json.dumps({"schema": "other", "events": []}),
             "events not a list": json.dumps({"schema": rf.REPORT_SCHEMA, "events": {"fired": True}}),
+            "events is 0": json.dumps({"schema": rf.REPORT_SCHEMA, "events": 0}),
+            "events is an empty string": json.dumps({"schema": rf.REPORT_SCHEMA, "events": ""}),
+            "events is false": json.dumps({"schema": rf.REPORT_SCHEMA, "events": False}),
+            "events is an empty object": json.dumps({"schema": rf.REPORT_SCHEMA, "events": {}}),
         }
         for name, text in cases.items():
             with self.subTest(name):
                 self.assertIsNone(rf.read_fired(self.write(text)))
         self.assertIsNone(rf.read_fired(Path("/nonexistent/r.json")))
+
+    def test_absent_or_null_events_count_as_zero_fired(self):
+        self.assertEqual(rf.read_fired(self.write(json.dumps({"schema": rf.REPORT_SCHEMA}))), 0)
+        self.assertEqual(rf.read_fired(self.write(json.dumps({"schema": rf.REPORT_SCHEMA, "events": None}))), 0)
 
     def test_evidence_state_keeps_crashes_and_missing_reports_apart(self):
         self.assertEqual(rf.evidence_state(2, None), "error: faultkit exited 2")
@@ -222,11 +230,17 @@ def gap(**overrides):
     return {k: v for k, v in base.items() if v is not None}
 
 
+def write_scenario(directory):
+    """The scenario file entry()'s default "config" points at, so existence checks pass."""
+    (directory / "no-auto-route.yaml").write_text("experiments: []\n")
+
+
 class ManifestTests(unittest.TestCase):
     def load(self, data, links=None):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "manifest.json"
             path.write_text(json.dumps(data))
+            write_scenario(Path(tmp))
             for name, target in (links or {}).items():
                 (Path(tmp) / name).symlink_to(target)
             return rf.load_manifest(path)
@@ -249,18 +263,23 @@ class ManifestTests(unittest.TestCase):
     def test_invalid_manifests_are_rejected(self):
         cases = {
             "unknown version": {"version": 7, "invariants": [entry()]},
+            "version as a boolean": {"version": True, "invariants": [entry()]},
             "no invariants": {"version": 1, "invariants": []},
             "bad id": {"version": 1, "invariants": [entry(id="Not A Slug")]},
+            "id with a trailing newline": {"version": 1, "invariants": [entry(id="no-auto-route\n")]},
             "duplicate id": {"version": 1, "invariants": [entry(), entry()]},
             "no invariant text": {"version": 1, "invariants": [entry(invariant="")]},
             "config and scenario": {"version": 1, "invariants": [entry(scenario="llm-api-degraded")]},
             "neither config nor scenario": {"version": 1, "invariants": [entry(config=None)]},
             "empty scenario": {"version": 1, "invariants": [entry(config=None, scenario="")]},
+            "whitespace-only scenario": {"version": 1, "invariants": [entry(config=None, scenario="   ")]},
             "gate as a string": {"version": 1, "invariants": [entry(gate="node --test")]},
             "empty gate": {"version": 1, "invariants": [entry(gate=[])]},
             "unknown mode": {"version": 1, "invariants": [entry(mode="docker")]},
             "base_url as a string": {"version": 1, "invariants": [entry(base_url="yes")]},
+            "shape as a number": {"version": 1, "invariants": [entry(shape=5)]},
             "absolute config": {"version": 1, "invariants": [entry(config="/etc/hosts")]},
+            "whitespace-only config": {"version": 1, "invariants": [entry(config="   ")]},
             "config escaping the directory": {"version": 1, "invariants": [entry(config="../outside.yaml")]},
             "fault_status in v1": {"version": 1, "invariants": [entry(fault_status="generated")]},
             "v2 without fault_status": {"version": 2, "invariants": [entry()]},
@@ -279,6 +298,17 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaises(rf.ManifestError):
             self.load({"version": 1, "invariants": [entry(config="link.yaml")]}, links={"link.yaml": "/etc/hosts"})
 
+    def test_config_resolving_to_the_manifest_directory_itself_is_rejected(self):
+        for config in (".", "./", "a/.."):
+            with self.subTest(config=config), self.assertRaises(rf.ManifestError) as ctx:
+                self.load({"version": 1, "invariants": [entry(config=config)]})
+            self.assertIn("must stay inside", str(ctx.exception))
+
+    def test_a_nonexistent_config_file_is_rejected(self):
+        with self.assertRaises(rf.ManifestError) as ctx:
+            self.load({"version": 1, "invariants": [entry(config="missing.yaml")]})
+        self.assertIn("scenario file missing.yaml does not exist", str(ctx.exception))
+
     def test_unreadable_manifest_is_a_manifest_error(self):
         with self.assertRaises(rf.ManifestError):
             rf.load_manifest(Path("/nonexistent/manifest.json"))
@@ -292,6 +322,7 @@ class ManifestV3Tests(unittest.TestCase):
             path = Path(tmp) / "manifest.json"
             (Path(tmp) / "registry").mkdir()
             (Path(tmp) / "registry" / "openai-503@1.0.0.yaml").write_text(self.SCENARIO)
+            write_scenario(Path(tmp))
             path.write_text(json.dumps(data))
             return rf.load_manifest(path)
 
@@ -323,12 +354,15 @@ class ManifestV3Tests(unittest.TestCase):
             "registry in v1": {"version": 1, "registry": {}, "invariants": [entry()]},
             "v3 without fault_status": {"version": 3, "invariants": [entry()]},
             "outcome without a dash": {"version": 3, "invariants": [entry(fault_status="generated", outcome="UO1")]},
+            "outcome with a trailing newline": {"version": 3, "invariants": [entry(fault_status="generated", outcome="UO-1\n")]},
             "absolute values path": {"version": 3, "values": "/etc/values.md", "invariants": [entry(fault_status="generated")]},
             "registry over http": {"version": 3, "registry": {"url": "http://example.com", "ref": "a" * 40}, "invariants": [entry(fault_status="generated")]},
             "registry on a branch": {"version": 3, "registry": {"url": "https://github.com/faultkit/registry", "ref": "main"}, "invariants": [entry(fault_status="generated")]},
+            "registry ref with a trailing newline": {"version": 3, "registry": {"url": "https://github.com/faultkit/registry", "ref": "a" * 40 + "\n"}, "invariants": [entry(fault_status="generated")]},
             "source on not_generated": {"version": 3, "invariants": [gap(source=self.source())]},
             "source on a builtin": {"version": 3, "invariants": [entry(fault_status="generated", config=None, scenario="llm-api-degraded", source=self.source())]},
             "source without semver": {"version": 3, "invariants": [entry(fault_status="generated", config="registry/openai-503@1.0.0.yaml", source=self.source(version="1.0"))]},
+            "source version with a trailing newline": {"version": 3, "invariants": [entry(fault_status="generated", config="registry/openai-503@1.0.0.yaml", source=self.source(version="1.0.0\n"))]},
             "source sha256 mismatch": {"version": 3, "invariants": [entry(fault_status="generated", config="registry/openai-503@1.0.0.yaml", source=self.source(sha256="0" * 64))]},
         }
         for name, data in cases.items():
@@ -353,6 +387,14 @@ class OutcomeCheckTests(unittest.TestCase):
         self.assertEqual(rf.resolve_values(None, m, self.tmp), self.tmp / "docs" / "values.md")
         self.assertEqual(rf.resolve_values(None, self.manifest(), self.tmp), self.tmp / ".faultkit" / "values.md")
         self.assertIsNone(rf.resolve_values(None, self.manifest(), self.tmp / "elsewhere"))
+
+    def test_manifest_values_path_must_stay_inside_the_repository(self):
+        outside = self.manifest(values="../outside.md")
+        with self.assertRaises(rf.ManifestError) as ctx:
+            rf.resolve_values(None, outside, self.tmp)
+        self.assertIn("must stay inside", str(ctx.exception))
+        inside = self.manifest(values="docs/values.md")
+        self.assertEqual(rf.resolve_values(None, inside, self.tmp), self.tmp / "docs" / "values.md")
 
     def test_declared_outcomes_pass(self):
         path = self.tmp / "values.md"
@@ -454,6 +496,7 @@ class EndToEndTests(unittest.TestCase):
     def test_manifest_runs_every_invariant(self):
         manifest = self.tmp / ".faultkit" / "invariants" / "manifest.json"
         manifest.parent.mkdir(parents=True)
+        write_scenario(manifest.parent)
         manifest.write_text(json.dumps({"version": 1, "invariants": [entry(), entry(id="second")]}))
         reports = self.tmp / "reports"
         code, out = self.main(["--manifest", str(manifest), "--reports-dir", str(reports)])
@@ -471,6 +514,7 @@ class EndToEndTests(unittest.TestCase):
     def test_v2_manifest_never_runs_not_generated_entries(self):
         manifest = self.tmp / ".faultkit" / "invariants" / "manifest.json"
         manifest.parent.mkdir(parents=True)
+        write_scenario(manifest.parent)
         manifest.write_text(json.dumps({"version": 2, "invariants": [entry(fault_status="generated"), gap()]}))
         reports = self.tmp / "reports"
         code, out = self.main(["--manifest", str(manifest), "--reports-dir", str(reports)])
@@ -492,6 +536,7 @@ class EndToEndTests(unittest.TestCase):
     def test_a_manifest_run_without_a_report_is_an_error(self):
         manifest = self.tmp / ".faultkit" / "invariants" / "manifest.json"
         manifest.parent.mkdir(parents=True)
+        write_scenario(manifest.parent)
         manifest.write_text(json.dumps({"version": 1, "invariants": [entry()]}))
         with mock.patch.dict(os.environ, {"FAKE_NO_REPORT": "1", "FAKE_EXIT": "0"}):
             code, out = self.main(["--manifest", str(manifest), "--reports-dir", str(self.tmp / "reports")])
@@ -500,12 +545,14 @@ class EndToEndTests(unittest.TestCase):
 
     def test_a_dangling_outcome_is_a_usage_error(self):
         manifest = self.tmp / "manifest.json"
+        write_scenario(self.tmp)
         manifest.write_text(json.dumps({"version": 3, "invariants": [entry(fault_status="generated", outcome="UO-1")]}))
         code, _ = self.main(["--manifest", str(manifest), "--values", str(self.tmp / "missing.md")])
         self.assertEqual(code, rf.EXIT_USAGE)
 
     def test_a_bad_values_file_is_a_usage_error(self):
         manifest = self.tmp / "manifest.json"
+        write_scenario(self.tmp)
         manifest.write_text(json.dumps({"version": 3, "invariants": [entry(fault_status="generated", outcome="UO-1")]}))
         values = self.tmp / "values.md"
         values.write_text("## Business value\nv\n")
@@ -514,6 +561,7 @@ class EndToEndTests(unittest.TestCase):
 
     def test_the_outcomes_table_follows_prove_all(self):
         manifest = self.tmp / "manifest.json"
+        write_scenario(self.tmp)
         manifest.write_text(json.dumps({"version": 3, "invariants": [entry(fault_status="generated", outcome="UO-1"), gap()]}))
         values = self.tmp / "values.md"
         values.write_text("## Business value\nv\n\n## Unacceptable outcomes\n- UO-1: a\n- UO-2: b\n")
@@ -525,6 +573,7 @@ class EndToEndTests(unittest.TestCase):
 
     def test_no_values_file_means_no_outcomes_table(self):
         manifest = self.tmp / "manifest.json"
+        write_scenario(self.tmp)
         manifest.write_text(json.dumps({"version": 1, "invariants": [entry()]}))
         cwd = os.getcwd()
         os.chdir(self.tmp)
@@ -533,6 +582,48 @@ class EndToEndTests(unittest.TestCase):
         finally:
             os.chdir(cwd)
         self.assertNotIn("=== outcomes ===", out)
+
+    def test_a_missing_values_file_is_a_usage_error_with_no_linked_outcome(self):
+        manifest = self.tmp / "manifest.json"
+        write_scenario(self.tmp)
+        manifest.write_text(json.dumps({"version": 1, "invariants": [entry()]}))
+        code, _ = self.main(["--manifest", str(manifest), "--values", str(self.tmp / "missing.md")])
+        self.assertEqual(code, rf.EXIT_USAGE)
+
+    def test_a_source_sha256_mismatch_never_invokes_faultkit(self):
+        (self.tmp / "registry").mkdir()
+        (self.tmp / "registry" / "openai-503@1.0.0.yaml").write_text("experiments: []\n")
+        manifest = self.tmp / "manifest.json"
+        manifest.write_text(json.dumps({
+            "version": 3,
+            "invariants": [entry(
+                fault_status="generated", config="registry/openai-503@1.0.0.yaml",
+                source={"registry": "faultkit", "id": "openai-503", "version": "1.0.0", "sha256": "0" * 64},
+            )],
+        }))
+        reports = self.tmp / "reports"
+        code, _ = self.main(["--manifest", str(manifest), "--reports-dir", str(reports)])
+        self.assertEqual(code, rf.EXIT_USAGE)
+        self.assertFalse(reports.exists())
+
+    def test_v1_manifest_with_an_implicit_values_file_shows_every_outcome_uncovered(self):
+        manifest = self.tmp / "manifest.json"
+        write_scenario(self.tmp)
+        manifest.write_text(json.dumps({"version": 1, "invariants": [entry(), entry(id="second")]}))
+        (self.tmp / ".faultkit").mkdir()
+        (self.tmp / ".faultkit" / "values.md").write_text(
+            "## Business value\nv\n\n## Unacceptable outcomes\n- UO-1: a\n- UO-2: b\n"
+        )
+        cwd = os.getcwd()
+        os.chdir(self.tmp)
+        try:
+            _, out = self.main(["--manifest", str(manifest), "--reports-dir", str(self.tmp / "reports")])
+        finally:
+            os.chdir(cwd)
+        after = out.split("=== prove-all ===")[1]
+        self.assertIn("=== outcomes ===", after)
+        self.assertEqual(after.count(rf.NO_INVARIANT), 2)
+        self.assertIn("declared 2, covered 0, uncovered 2, unlinked invariants 2", after)
 
 
 class OutcomeTableTests(unittest.TestCase):
@@ -571,6 +662,11 @@ class OutcomeTableTests(unittest.TestCase):
         self.assertTrue(lines[2].endswith(rf.NOT_GENERATED))
         self.assertEqual(lines[-1], "declared 1, covered 1, uncovered 0, unlinked invariants 0")
 
+    def test_inferred_values_get_a_different_header(self):
+        values = rf.Values(business_value="v", outcomes=[rf.Outcome("UO-1", "t")], inferred=True)
+        lines = rf.render_outcomes(values, [], {}, color=False).splitlines()
+        self.assertEqual(lines[0], "=== outcomes (inferred) ===")
+
 
 class ValuesTests(unittest.TestCase):
     def test_valid_fixtures_parse_to_their_json(self):
@@ -588,8 +684,8 @@ class ValuesTests(unittest.TestCase):
                 self.assertEqual(str(ctx.exception), md.with_suffix(".error").read_text(encoding="utf-8").strip())
 
     def test_fixture_sets_are_complete(self):
-        self.assertEqual(len(list((FIXTURES / "valid").glob("*.md"))), 4)
-        self.assertEqual(len(list((FIXTURES / "invalid").glob("*.md"))), 9)
+        self.assertEqual(len(list((FIXTURES / "valid").glob("*.md"))), 7)
+        self.assertEqual(len(list((FIXTURES / "invalid").glob("*.md"))), 13)
 
     def test_crlf_reads_like_lf(self):
         text = (FIXTURES / "valid" / "full.md").read_text(encoding="utf-8")

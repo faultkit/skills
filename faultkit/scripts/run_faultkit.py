@@ -75,18 +75,18 @@ SEVERITY = ("error", "silent failure confirmed", "invalid evidence", "fault not 
 
 V3_TOP = ("values", "registry")
 V3_ENTRY = ("outcome", "source")
-OUTCOME_ID = re.compile(r"^UO-\d+$")
+OUTCOME_ID = re.compile(r"^UO-\d+$", re.ASCII)
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$")
-SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
+SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$", re.ASCII)
 
 REPORT_SCHEMA = "faultkit.dev/report/v1"
 REPORT_ERROR = "error: report missing or malformed"
 
 VALUES_DEFAULT = Path(".faultkit") / "values.md"
 INFERRED_MARKER = "<!-- inferred by faultkit; not declared by a person -->"
-OUTCOME_LINE = re.compile(r"^- (UO-\d+): (.+)$")
-FRONTMATTER_KEY = re.compile(r"^([A-Za-z_][\w-]*):(.*)$")
+OUTCOME_LINE = re.compile(r"^- (UO-\d+): (.+)$", re.ASCII)
+FRONTMATTER_KEY = re.compile(r"^([A-Za-z_][\w-]*):(.*)$", re.ASCII)
 FRONTMATTER_ITEM = re.compile(r"^\s*- (.+)$")
 SECTIONS = {"business value": "Business value", "unacceptable outcomes": "Unacceptable outcomes", "out of scope": "Out of scope"}
 
@@ -241,12 +241,14 @@ def _argv(value) -> bool:
 
 def _check_config(manifest_dir: Path, config, where: str) -> None:
     """A scenario file is relative and resolves, symlinks included, inside the manifest's directory."""
-    if not isinstance(config, str) or not config or Path(config).is_absolute():
+    if not isinstance(config, str) or not config.strip() or Path(config).is_absolute():
         raise ManifestError(f'{where}: "config" must be a path relative to the manifest')
     base = manifest_dir.resolve()
     target = (manifest_dir / config).resolve()
-    if target != base and base not in target.parents:
+    if target == base or base not in target.parents:
         raise ManifestError(f'{where}: "config" must stay inside {manifest_dir}')
+    if not target.exists():
+        raise ManifestError(f'{where}: scenario file {config} does not exist')
 
 
 def _check_generated(e: dict, where: str, manifest_dir: Path) -> None:
@@ -254,7 +256,7 @@ def _check_generated(e: dict, where: str, manifest_dir: Path) -> None:
         raise ManifestError(f'{where}: set exactly one of "config" (a scenario file) or "scenario" (a builtin)')
     if "config" in e:
         _check_config(manifest_dir, e["config"], where)
-    elif not isinstance(e["scenario"], str) or not e["scenario"]:
+    elif not isinstance(e["scenario"], str) or not e["scenario"].strip():
         raise ManifestError(f'{where}: "scenario" must name a builtin')
     if not _argv(e.get("gate")):
         raise ManifestError(f'{where}: "gate" must be the test command as a non-empty list of strings')
@@ -278,7 +280,7 @@ def _check_source(e: dict, where: str, manifest_dir: Path) -> None:
     fields_ok = isinstance(source, dict) and all(
         isinstance(source.get(k), str) and source[k] for k in ("registry", "id", "version", "sha256")
     )
-    if not fields_ok or not SLUG.match(source["id"]) or not SEMVER.match(source["version"]) or not SHA256_HEX.match(source["sha256"]):
+    if not fields_ok or not SLUG.fullmatch(source["id"]) or not SEMVER.fullmatch(source["version"]) or not SHA256_HEX.fullmatch(source["sha256"]):
         raise ManifestError(f'{where}: "source" needs "registry", a kebab-case "id", a semver "version", and a hex "sha256"')
     try:
         actual = hashlib.sha256((manifest_dir / e["config"]).read_bytes()).hexdigest()
@@ -294,7 +296,7 @@ def load_manifest(path: Path) -> Manifest:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise ManifestError(f"cannot read {path}: {exc}") from None
-    if not isinstance(data, dict) or data.get("version") not in (1, 2, 3):
+    if not isinstance(data, dict) or isinstance(data.get("version"), bool) or data.get("version") not in (1, 2, 3):
         raise ManifestError(f'{path}: "version" must be 1, 2, or 3')
     version = data["version"]
     for name in V3_TOP:
@@ -307,7 +309,7 @@ def load_manifest(path: Path) -> Manifest:
     if registry is not None and (
         not isinstance(registry, dict)
         or not str(registry.get("url", "")).startswith("https://")
-        or not COMMIT_SHA.match(str(registry.get("ref", "")))
+        or not COMMIT_SHA.fullmatch(str(registry.get("ref", "")))
     ):
         raise ManifestError(f'{path}: "registry" needs an https "url" and a 40-hex commit "ref"')
     entries = data.get("invariants")
@@ -316,7 +318,7 @@ def load_manifest(path: Path) -> Manifest:
     seen = set()
     for i, e in enumerate(entries):
         where = f"{path}: invariants[{i}]"
-        if not isinstance(e, dict) or not isinstance(e.get("id"), str) or not SLUG.match(e["id"]):
+        if not isinstance(e, dict) or not isinstance(e.get("id"), str) or not SLUG.fullmatch(e["id"]):
             raise ManifestError(f'{where}: "id" must be a kebab-case slug')
         if e["id"] in seen:
             raise ManifestError(f'{where}: duplicate id {e["id"]}')
@@ -326,7 +328,7 @@ def load_manifest(path: Path) -> Manifest:
         for name in V3_ENTRY:
             if name in e and version < 3:
                 raise ManifestError(f'{where}: "{name}" needs "version": 3')
-        if "outcome" in e and (not isinstance(e["outcome"], str) or not OUTCOME_ID.match(e["outcome"])):
+        if "outcome" in e and (not isinstance(e["outcome"], str) or not OUTCOME_ID.fullmatch(e["outcome"])):
             raise ManifestError(f'{where}: "outcome" must look like UO-1')
         if version == 1:
             if "fault_status" in e:
@@ -344,13 +346,16 @@ def load_manifest(path: Path) -> Manifest:
             raise ManifestError(f'{where}: "mode" must be one of {", ".join(MODES)}')
         if not isinstance(e.get("base_url", False), bool) or not isinstance(e.get("provider", ""), str):
             raise ManifestError(f'{where}: "base_url" must be true or false and "provider" a string')
+        if "shape" in e and e["shape"] is not None and not isinstance(e["shape"], str):
+            raise ManifestError(f'{where}: "shape" must be a string')
     return Manifest(version=version, entries=entries, values=values, registry=registry)
 
 
-def _uncomment(lines: list[str]) -> list[str]:
-    """Each line with its HTML comments removed, including comments that span lines."""
-    out, inside = [], False
-    for line in lines:
+def _uncomment(lines: list[str]) -> tuple[list[str], Optional[int]]:
+    """Each line with its HTML comments removed, including comments that span lines.
+    The second value is the 1-based line an unclosed comment opened on, if any."""
+    out, inside, opened = [], False, None
+    for number, line in enumerate(lines, start=1):
         kept, rest = "", line
         while rest:
             if inside:
@@ -362,8 +367,10 @@ def _uncomment(lines: list[str]) -> list[str]:
                     kept, rest = kept + rest, ""
                 else:
                     kept, rest, inside = kept + rest[:start], rest[start + 4:], True
+                    if inside:
+                        opened = number
         out.append(kept)
-    return out
+    return out, (opened if inside else None)
 
 
 def _scalar(raw: str) -> str:
@@ -402,8 +409,12 @@ def _frontmatter(lines: list[str], source: str) -> tuple[dict, dict, int]:
 
 def parse_values(text: str, source: str = "values.md") -> Values:
     """Parse a values file by the grammar in references/values.md. Errors name the line."""
+    if text.startswith("\ufeff"):
+        text = text[1:]
     raw = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    lines = _uncomment(raw)
+    lines, unclosed = _uncomment(raw)
+    if unclosed is not None:
+        raise ValuesError(f"{source}:{unclosed}: comment is not closed with -->")
     keys, key_lines, start = _frontmatter(lines, source)
     sections: dict[str, tuple[int, list[tuple[int, str]]]] = {}
     current = None
@@ -464,10 +475,14 @@ def load_values(path: Path) -> Values:
 
 
 def resolve_values(explicit: Optional[str], manifest: Manifest, cwd: Path) -> Optional[Path]:
-    """--values, else the manifest's "values", else .faultkit/values.md when it exists, else None."""
+    """--values, else the manifest's "values" (must stay inside cwd), else .faultkit/values.md when it exists, else None."""
     if explicit:
         return Path(explicit)
     if manifest.values:
+        base = cwd.resolve()
+        target = (cwd / manifest.values).resolve()
+        if target == base or base not in target.parents:
+            raise ManifestError(f'"values" {manifest.values} must stay inside {cwd}')
         return cwd / manifest.values
     default = cwd / VALUES_DEFAULT
     return default if default.exists() else None
@@ -526,7 +541,8 @@ def read_fired(report: Path) -> Optional[int]:
         return None
     if not isinstance(data, dict) or data.get("schema") != REPORT_SCHEMA:
         return None
-    if not isinstance(data.get("events") or [], list):
+    events = data.get("events")
+    if events is not None and not isinstance(events, list):
         return None
     return fired_count(data)
 
@@ -626,7 +642,8 @@ def render_outcomes(values: Values, entries: list[dict], states: dict[str, str],
         rows.append((outcome.id, ", ".join(ids) or "-", worst_state([states[i] for i in ids]) if ids else NO_INVARIANT))
     width_id = max(len("outcome"), *(len(row[0]) for row in rows))
     width_ids = max(len("invariants"), *(len(row[1]) for row in rows))
-    lines = [paint("=== outcomes ===", "bold", color), f"{'outcome':<{width_id}}  {'invariants':<{width_ids}}  worst state"]
+    header = "=== outcomes (inferred) ===" if values.inferred else "=== outcomes ==="
+    lines = [paint(header, "bold", color), f"{'outcome':<{width_id}}  {'invariants':<{width_ids}}  worst state"]
     for ident, ids, state in rows:
         lines.append(f"{ident:<{width_id}}  {ids:<{width_ids}}  {paint(state, state_color(state), color)}")
     covered = sum(1 for row in rows if row[2] != NO_INVARIANT)
