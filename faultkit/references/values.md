@@ -15,19 +15,19 @@ sent anywhere.
 ## The file
 
 ```markdown
-    ---
-    workflow: collections-agent
-    domains: [payments, collections]
-    ---
-    ## Business value
-    Paying customers are never treated as delinquent.
+---
+workflow: collections-agent
+domains: [payments, collections]
+---
+## Business value
+Paying customers are never treated as delinquent.
 
-    ## Unacceptable outcomes
-    - UO-1: A final notice or a collections referral is issued for a paid invoice.
-    - UO-2: A customer is charged twice for one invoice.
+## Unacceptable outcomes
+- UO-1: A final notice or a collections referral is issued for a paid invoice.
+- UO-2: A customer is charged twice for one invoice.
 
-    ## Out of scope
-    - Wrong tone in a reminder email.
+## Out of scope
+- Wrong tone in a reminder email.
 ```
 
 | Rule | Detail |
