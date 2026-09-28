@@ -50,7 +50,7 @@ user's yes is the opt-in.
 `--auto` anywhere in the input runs the whole chain without stopping at the
 questions. Review continues straight into Prove; Harden hardens every
 unguarded invariant in a row and continues into Prove or Prove all; Prove with
-no invariant derives one with the first three Review steps, the action
+no invariant derives one with Review steps 0 to 3, the action
 with the largest blast radius first; Prove all writes the invariants it
 finds without asking. This is the mode for CI and for a user who has
 already decided.
@@ -147,7 +147,7 @@ Do not change code in this mode.
    under `## Undeclared outcomes`, one line each with its `file:line`, as a
    proposal with a provisional id `UO-new-1`, `UO-new-2`, and so on. Skip
    one that means the same as a line under the file's `## Out of scope`.
-   Review never writes the values file.
+   Review never writes the values file on its own.
 3. Ask the two questions per candidate: is there a check, and does it gate
    anything. Name fail-open shapes by their line.
 4. Classify each candidate with `references/silent-failure-catalog.md`. The
@@ -218,7 +218,7 @@ Do not change code in this mode.
 
 1. Count before changing anything. Take the invariants from the input, from
    `.faultkit/invariants/manifest.json`, from a review in this conversation,
-   or from the first four Review steps. For each, answer Review step 3's two
+   or from Review steps 0 to 4. For each, answer Review step 3's two
    questions against the current code, and add its last proof state when a
    report exists in `.faultkit/reports/`. Show them as a list and close with
    one line: `Invariants: <n> found, <u> not yet guarded.` With u = 0, say
@@ -266,9 +266,9 @@ Do not change code in this mode.
      name both.
    - Push the branch and open the pull request with `gh pr create`. The
      body lists each invariant with its outcome (`UO-n`) when it has one,
-     its guard at `file:line`, its gate test, and its proof state, quoting the `=== proof ===` block or the
-     `=== prove-all ===` table when a proof ran, and saying "not proven with
-     faultkit" when none did.
+     its guard at `file:line`, its gate test, and its proof state, quoting
+     the `=== proof ===` block or the `=== prove-all ===` table when a proof
+     ran, and saying "not proven with faultkit" when none did.
    - Without `gh`, a remote, or push rights, say so and print the commands.
 
 ## Prove
@@ -277,7 +277,7 @@ Input: an invariant in words, a scenario name, or a scenario path, optionally
 followed by `--` and the test command. With no input, ask for the invariant
 and stop. Never derive one on your own in this mode; in a non-interactive
 session print the usage and exit instead. The one exception is `--auto`:
-then derive the invariant with the first three Review steps, largest blast
+then derive the invariant with Review steps 0 to 3, largest blast
 radius first, and continue. Act on exactly one project, the
 current directory or the one named in the input, never on a set of projects
 found by listing a parent directory.
@@ -365,10 +365,11 @@ Input: optionally `--auto`, optionally the project. Act on exactly one
 project, the current directory or the one named, as Prove does.
 
 1. **Safety gate, before anything else**, exactly as Prove step 1.
-2. Read `.faultkit/invariants/manifest.json` if it exists. Its entries stay
-   as they are: never rewrite an entry's scenario or gate to change a
-   result.
-3. Find the invariants with the first four Review steps, every boundary,
+2. Read `.faultkit/invariants/manifest.json` and `.faultkit/values.md` if
+   they exist; the values file decides declared or inferred mode, as in
+   Review step 0. The manifest's entries stay as they are: never rewrite
+   an entry's scenario or gate to change a result.
+3. Find the invariants with Review steps 0 to 4, every boundary,
    largest blast radius first. Keep each one a fault can express that the
    manifest does not already hold. Record each one no fault expresses as a
    `not_generated` entry with its `fault_reason`, so the manifest lists
