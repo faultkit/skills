@@ -97,6 +97,10 @@ test. The skill asks before writing it. Without a yes, and always with
 workspace and leaves the project untouched; a project that already has a
 manifest has said yes.
 
+Invariants that no deterministic fault can express yet are kept too, as
+`not_generated` entries with a reason (manifest version 2). They never run,
+and CI lists them next to the proven ones.
+
 Commit `.faultkit/invariants/` and the gate tests. Reports go to
 `.faultkit/reports/`, which the skill adds to `.gitignore`. From the project
 root, any machine, including CI, replays every invariant with the helper and
@@ -110,9 +114,10 @@ curl -fsSLo run_faultkit.py \
 python3 run_faultkit.py --manifest .faultkit/invariants/manifest.json
 ```
 
-It exits 0 only when every invariant was proven under fault. Otherwise it
-exits with the worst result: 2 if a run errored, 3 if a run injected
-nothing, 1 if a silent failure was confirmed. The format is in
+It exits 0 only when every invariant that runs was proven under fault.
+Otherwise it exits with the worst result: 2 if a run errored or left no
+valid report, 3 if a run injected nothing, 1 if a silent failure was
+confirmed. The format is in
 `faultkit/references/faultkit-execution.md`, "The invariant manifest".
 
 ## The proof condition

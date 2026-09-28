@@ -284,18 +284,19 @@ project, the current directory or the one named, as Prove does.
    result.
 3. Find the invariants with the first four Review steps, every boundary,
    largest blast radius first. Keep each one a fault can express that the
-   manifest does not already hold. Name the ones no fault expresses, one
-   line each with the reason; they get no entry.
+   manifest does not already hold. Record each one no fault expresses as a
+   `not_generated` entry with its `fault_reason`, so the manifest lists
+   every invariant the project has; it never runs.
 4. With new invariants, show them as a table (id, invariant, shape,
-   scenario, mode, gate) and ask one question: write them and run the whole
+   scenario, mode, gate; a `not_generated` row shows its reason instead) and ask one question: write them and run the whole
    manifest, and, unless the manifest exists, keep them in the project or
    in a temporary workspace? Wait for the answer. With `--auto`, skip the
    question; the location follows "Where the proof is written". In a
    non-interactive session without `--auto`, print the table and the
    command with `--auto`, and end. With nothing new, go to step 6.
-5. For each new invariant, Prove steps 3 to 6: scenario, mode, gate, manifest
-   entry. One gate test per invariant, named after its id, so a red row
-   names the invariant that broke.
+5. For each new generated invariant, Prove steps 3 to 6: scenario, mode,
+   gate, manifest entry. Write each `not_generated` one with its reason, by
+   "The invariant manifest" in `references/faultkit-execution.md`.
 6. Run every entry with one helper call. In the project, reports land in
    `.faultkit/reports/`; add that directory to `.gitignore` when the project
    has one. The scenario files and the manifest are meant to be committed.
@@ -334,6 +335,7 @@ python3 <skill>/scripts/run_faultkit.py --verbose \
 | "The gate should skip without faultkit so it cannot pass vacuously." | Prefer green without a fault and red under one, so ordinary CI exercises the guard. |
 | "A better prompt would fix this." | Prompting is guidance. The model received "do not treat this as no payment" and escalated anyway. |
 | "I'll adjust the fixture so the run passes." | Never. Report the failure. |
+| "No fault expresses it, so it stays out of the manifest." | Record it as `not_generated` with the reason. The manifest lists every invariant, and CI counts it. |
 
 ## Quick reference
 
