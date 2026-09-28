@@ -1,6 +1,7 @@
 """Unit tests for the runner's pure functions. Standard library only."""
 
 import contextlib
+import dataclasses
 import hashlib
 import io
 import json
@@ -14,6 +15,8 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "faultkit" / "scripts"))
 
 import run_faultkit as rf  # noqa: E402
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "values"
 
 
 class PlatformTests(unittest.TestCase):
@@ -390,6 +393,45 @@ class EndToEndTests(unittest.TestCase):
             code, out = self.main(["--manifest", str(manifest), "--reports-dir", str(self.tmp / "reports")])
         self.assertEqual(code, rf.EXIT_INTERNAL)
         self.assertIn(rf.REPORT_ERROR, out.split("=== prove-all ===")[1])
+
+
+class ValuesTests(unittest.TestCase):
+    def test_valid_fixtures_parse_to_their_json(self):
+        for md in sorted((FIXTURES / "valid").glob("*.md")):
+            with self.subTest(md.name):
+                values = rf.parse_values(md.read_text(encoding="utf-8"), "values.md")
+                expected = json.loads(md.with_suffix(".json").read_text(encoding="utf-8"))
+                self.assertEqual(dataclasses.asdict(values), expected)
+
+    def test_invalid_fixtures_name_the_line(self):
+        for md in sorted((FIXTURES / "invalid").glob("*.md")):
+            with self.subTest(md.name):
+                with self.assertRaises(rf.ValuesError) as ctx:
+                    rf.parse_values(md.read_text(encoding="utf-8"), "values.md")
+                self.assertEqual(str(ctx.exception), md.with_suffix(".error").read_text(encoding="utf-8").strip())
+
+    def test_fixture_sets_are_complete(self):
+        self.assertEqual(len(list((FIXTURES / "valid").glob("*.md"))), 4)
+        self.assertEqual(len(list((FIXTURES / "invalid").glob("*.md"))), 9)
+
+    def test_crlf_reads_like_lf(self):
+        text = (FIXTURES / "valid" / "full.md").read_text(encoding="utf-8")
+        self.assertEqual(rf.parse_values(text.replace("\n", "\r\n")), rf.parse_values(text))
+
+    def test_a_blank_outcome_text_is_not_an_outcome(self):
+        with self.assertRaises(rf.ValuesError):
+            rf.parse_values("## Business value\nv\n## Unacceptable outcomes\n- UO-1:  \n")
+
+    def test_load_values_names_the_file(self):
+        path = Path(tempfile.mkdtemp()) / "values.md"
+        path.write_text("## Business value\n\n## Unacceptable outcomes\n- UO-1: x\n", encoding="utf-8")
+        with self.assertRaises(rf.ValuesError) as ctx:
+            rf.load_values(path)
+        self.assertTrue(str(ctx.exception).startswith(f"{path}:1: "))
+
+    def test_unreadable_values_file_is_a_values_error(self):
+        with self.assertRaises(rf.ValuesError):
+            rf.load_values(Path("/nonexistent/values.md"))
 
 
 if __name__ == "__main__":

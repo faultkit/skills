@@ -28,7 +28,7 @@ pinned release into the cache directory.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import hashlib
 import io
@@ -69,6 +69,13 @@ NOT_GENERATED = "fault not generated"
 REPORT_SCHEMA = "faultkit.dev/report/v1"
 REPORT_ERROR = "error: report missing or malformed"
 
+VALUES_DEFAULT = Path(".faultkit") / "values.md"
+INFERRED_MARKER = "<!-- inferred by faultkit; not declared by a person -->"
+OUTCOME_LINE = re.compile(r"^- (UO-\d+): (.+)$")
+FRONTMATTER_KEY = re.compile(r"^([A-Za-z_][\w-]*):(.*)$")
+FRONTMATTER_ITEM = re.compile(r"^\s*- (.+)$")
+SECTIONS = {"business value": "Business value", "unacceptable outcomes": "Unacceptable outcomes", "out of scope": "Out of scope"}
+
 ANSI = {"reset": "\033[0m", "bold": "\033[1m", "green": "\033[32m", "red": "\033[31m", "yellow": "\033[33m", "magenta": "\033[35m", "dim": "\033[2m"}
 STATE_COLOR = [
     ("invariant proven under fault", "green"),
@@ -97,6 +104,29 @@ class Manifest:
 
     version: int
     entries: list[dict]
+
+
+class ValuesError(Exception):
+    """The values file breaks the grammar in references/values.md."""
+
+
+@dataclass
+class Outcome:
+    id: str
+    text: str
+
+
+@dataclass
+class Values:
+    """A parsed .faultkit/values.md; see references/values.md."""
+
+    business_value: str
+    outcomes: list[Outcome]
+    out_of_scope: list[str] = field(default_factory=list)
+    workflow: Optional[str] = None
+    domains: list[str] = field(default_factory=list)
+    owner: Optional[str] = None
+    inferred: bool = False
 
 
 def platform_key(system: Optional[str] = None, machine: Optional[str] = None) -> tuple[str, str]:
@@ -260,6 +290,122 @@ def load_manifest(path: Path) -> Manifest:
         if not isinstance(e.get("base_url", False), bool) or not isinstance(e.get("provider", ""), str):
             raise ManifestError(f'{where}: "base_url" must be true or false and "provider" a string')
     return Manifest(version=version, entries=entries)
+
+
+def _uncomment(lines: list[str]) -> list[str]:
+    """Each line with its HTML comments removed, including comments that span lines."""
+    out, inside = [], False
+    for line in lines:
+        kept, rest = "", line
+        while rest:
+            if inside:
+                end = rest.find("-->")
+                rest, inside = ("", True) if end < 0 else (rest[end + 3:], False)
+            else:
+                start = rest.find("<!--")
+                if start < 0:
+                    kept, rest = kept + rest, ""
+                else:
+                    kept, rest, inside = kept + rest[:start], rest[start + 4:], True
+        out.append(kept)
+    return out
+
+
+def _scalar(raw: str) -> str:
+    raw = raw.strip()
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "\"'":
+        return raw[1:-1]
+    return raw
+
+
+def _frontmatter(lines: list[str], source: str) -> tuple[dict, dict, int]:
+    """Optional frontmatter: (keys, the line number of each key, index of the first line after it)."""
+    first = next((i for i, line in enumerate(lines) if line.strip()), None)
+    if first is None or lines[first].strip() != "---":
+        return {}, {}, 0
+    keys, key_lines, key = {}, {}, None
+    for i in range(first + 1, len(lines)):
+        line = lines[i]
+        if line.strip() == "---":
+            return keys, key_lines, i + 1
+        if not line.strip():
+            continue
+        pair, item = FRONTMATTER_KEY.match(line), FRONTMATTER_ITEM.match(line)
+        if pair:
+            key, raw = pair.group(1), pair.group(2).strip()
+            key_lines[key] = i + 1
+            if raw.startswith("[") and raw.endswith("]"):
+                keys[key] = [_scalar(part) for part in raw[1:-1].split(",") if part.strip()]
+            else:
+                keys[key] = _scalar(raw) if raw else []
+        elif item and key is not None and isinstance(keys[key], list):
+            keys[key].append(_scalar(item.group(1)))
+        else:
+            raise ValuesError(f'{source}:{i + 1}: frontmatter line is not "key: value" or "- item"')
+    raise ValuesError(f"{source}:{first + 1}: frontmatter is not closed with ---")
+
+
+def parse_values(text: str, source: str = "values.md") -> Values:
+    """Parse a values file by the grammar in references/values.md. Errors name the line."""
+    raw = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    lines = _uncomment(raw)
+    keys, key_lines, start = _frontmatter(lines, source)
+    sections: dict[str, tuple[int, list[tuple[int, str]]]] = {}
+    current = None
+    for i in range(start, len(lines)):
+        line = lines[i]
+        if line.startswith("## "):
+            current = SECTIONS.get(line[3:].strip().lower())
+            if current in sections:
+                raise ValuesError(f'{source}:{i + 1}: duplicate section "## {current}"')
+            if current:
+                sections[current] = (i + 1, [])
+        elif current:
+            sections[current][1].append((i + 1, line))
+    for name in ("Business value", "Unacceptable outcomes"):
+        if name not in sections:
+            raise ValuesError(f'{source}:1: missing "## {name}" section')
+    head, body = sections["Business value"]
+    business_value = "\n".join(line for _, line in body).strip()
+    if not business_value:
+        raise ValuesError(f'{source}:{head}: "## Business value" is empty')
+    head, body = sections["Unacceptable outcomes"]
+    outcomes, seen = [], set()
+    for number, line in body:
+        match = OUTCOME_LINE.match(line)
+        if not match or not match.group(2).strip():
+            continue
+        if match.group(1) in seen:
+            raise ValuesError(f"{source}:{number}: duplicate outcome id {match.group(1)}")
+        seen.add(match.group(1))
+        outcomes.append(Outcome(match.group(1), match.group(2).strip()))
+    if not outcomes:
+        raise ValuesError(f'{source}:{head}: "## Unacceptable outcomes" has no "- UO-n: text" line')
+    out_of_scope = [
+        line[2:].strip() for _, line in sections.get("Out of scope", (0, []))[1]
+        if line.startswith("- ") and line[2:].strip()
+    ]
+    for name in ("workflow", "owner"):
+        if isinstance(keys.get(name), list):
+            raise ValuesError(f'{source}:{key_lines[name]}: frontmatter "{name}" must be a string')
+    domains = keys.get("domains", [])
+    return Values(
+        business_value=business_value,
+        outcomes=outcomes,
+        out_of_scope=out_of_scope,
+        workflow=keys.get("workflow"),
+        domains=[domains] if isinstance(domains, str) else domains,
+        owner=keys.get("owner"),
+        inferred=raw[0].strip() == INFERRED_MARKER,
+    )
+
+
+def load_values(path: Path) -> Values:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValuesError(f"cannot read {path}: {exc}") from None
+    return parse_values(text, str(path))
 
 
 def build_command(
