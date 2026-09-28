@@ -355,10 +355,10 @@ finds the file through `--values PATH`, else the manifest's `values`, else
 
 ```text
 === outcomes ===
-outcome  invariants                     worst state
-UO-1     paid-invoice-never-escalated   invariant proven under fault
-UO-2     fallback-never-auto-routes     silent failure confirmed
-UO-3     -                              no invariant yet
+outcome  invariants                    worst state
+UO-1     paid-invoice-never-escalated  invariant proven under fault
+UO-2     fallback-never-auto-routes    silent failure confirmed
+UO-3     -                             no invariant yet
 declared 3, covered 2, uncovered 1, unlinked invariants 1
 ```
 
