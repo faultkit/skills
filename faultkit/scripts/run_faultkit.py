@@ -10,10 +10,12 @@ own exit code so shells and CI can branch on it:
     3  invalid evidence             (no fault fired; the target never reached faultkit)
     4  usage error
 
-With --manifest, runs every invariant in .faultkit/invariants/manifest.json,
-prints a proof block per invariant and a summary, and exits with the worst
-result: 2 if any errored, else 3 if any injected nothing, else 1 if any
-silent failure was confirmed, else 0. A bad manifest exits 4.
+With --manifest, runs every invariant in .faultkit/invariants/manifest.json
+(versions 1 and 2), prints a proof block per invariant and a summary, and
+exits with the worst result: 2 if any errored, else 3 if any injected
+nothing, else 1 if any silent failure was confirmed, else 0. An entry with
+fault_status "not_generated" never runs and never changes the exit code.
+A bad manifest exits 4.
 
 Binary resolution, first match wins: --faultkit-bin, $FAULTKIT, faultkit on
 PATH, --faultkit-source (go build), then a checksum-verified download of the
@@ -23,6 +25,8 @@ pinned release into the cache directory.
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
+
 import hashlib
 import io
 import json
@@ -56,12 +60,16 @@ EXIT_OK, EXIT_TARGET_FAILED, EXIT_INTERNAL, EXIT_FAULT_NOT_FIRED, EXIT_USAGE = 0
 MODES = ("auto", "proxy", "ebpf")
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
-ANSI = {"reset": "\033[0m", "bold": "\033[1m", "green": "\033[32m", "red": "\033[31m", "yellow": "\033[33m", "magenta": "\033[35m"}
+FAULT_STATUS = ("generated", "not_generated")
+NOT_GENERATED = "fault not generated"
+
+ANSI = {"reset": "\033[0m", "bold": "\033[1m", "green": "\033[32m", "red": "\033[31m", "yellow": "\033[33m", "magenta": "\033[35m", "dim": "\033[2m"}
 STATE_COLOR = [
     ("invariant proven under fault", "green"),
     ("silent failure confirmed", "red"),
     ("invalid evidence", "yellow"),
     ("error", "magenta"),
+    ("fault not generated", "dim"),
 ]
 
 
@@ -75,6 +83,14 @@ class ChecksumMismatch(Exception):
 
 class ManifestError(Exception):
     """The invariant manifest is unreadable or an entry is malformed."""
+
+
+@dataclass
+class Manifest:
+    """A validated invariant manifest. Every entry carries fault_status; v1 entries read as "generated"."""
+
+    version: int
+    entries: list[dict]
 
 
 def platform_key(system: Optional[str] = None, machine: Optional[str] = None) -> tuple[str, str]:
@@ -166,14 +182,50 @@ def resolve_binary(
     return downloader(version, cache_dir)
 
 
-def load_manifest(path: Path) -> list[dict]:
+def _argv(value) -> bool:
+    return isinstance(value, list) and bool(value) and all(isinstance(a, str) and a for a in value)
+
+
+def _check_config(manifest_dir: Path, config, where: str) -> None:
+    """A scenario file is relative and resolves, symlinks included, inside the manifest's directory."""
+    if not isinstance(config, str) or not config or Path(config).is_absolute():
+        raise ManifestError(f'{where}: "config" must be a path relative to the manifest')
+    base = manifest_dir.resolve()
+    target = (manifest_dir / config).resolve()
+    if target != base and base not in target.parents:
+        raise ManifestError(f'{where}: "config" must stay inside {manifest_dir}')
+
+
+def _check_generated(e: dict, where: str, manifest_dir: Path) -> None:
+    if ("config" in e) == ("scenario" in e):
+        raise ManifestError(f'{where}: set exactly one of "config" (a scenario file) or "scenario" (a builtin)')
+    if "config" in e:
+        _check_config(manifest_dir, e["config"], where)
+    elif not isinstance(e["scenario"], str) or not e["scenario"]:
+        raise ManifestError(f'{where}: "scenario" must name a builtin')
+    if not _argv(e.get("gate")):
+        raise ManifestError(f'{where}: "gate" must be the test command as a non-empty list of strings')
+
+
+def _check_not_generated(e: dict, where: str) -> None:
+    if "config" in e or "scenario" in e:
+        raise ManifestError(f'{where}: a not_generated invariant has no "config" or "scenario"')
+    reason = e.get("fault_reason")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ManifestError(f'{where}: a not_generated invariant needs "fault_reason"')
+    if "gate" in e and not _argv(e["gate"]):
+        raise ManifestError(f'{where}: "gate" must be the test command as a non-empty list of strings')
+
+
+def load_manifest(path: Path) -> Manifest:
     """Read and validate .faultkit/invariants/manifest.json; see faultkit-execution.md."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise ManifestError(f"cannot read {path}: {exc}") from None
-    if not isinstance(data, dict) or data.get("version") != 1:
-        raise ManifestError(f'{path}: expected an object with "version": 1')
+    if not isinstance(data, dict) or data.get("version") not in (1, 2):
+        raise ManifestError(f'{path}: "version" must be 1 or 2')
+    version = data["version"]
     entries = data.get("invariants")
     if not isinstance(entries, list) or not entries:
         raise ManifestError(f'{path}: "invariants" must be a non-empty list')
@@ -187,16 +239,21 @@ def load_manifest(path: Path) -> list[dict]:
         seen.add(e["id"])
         if not isinstance(e.get("invariant"), str) or not e["invariant"].strip():
             raise ManifestError(f'{where}: "invariant" must state the invariant')
-        if ("config" in e) == ("scenario" in e):
-            raise ManifestError(f'{where}: set exactly one of "config" (a scenario file) or "scenario" (a builtin)')
-        gate = e.get("gate")
-        if not isinstance(gate, list) or not gate or not all(isinstance(a, str) and a for a in gate):
-            raise ManifestError(f'{where}: "gate" must be the test command as a non-empty list of strings')
+        if version == 1:
+            if "fault_status" in e:
+                raise ManifestError(f'{where}: "fault_status" needs "version": 2')
+            e["fault_status"] = "generated"
+        elif e.get("fault_status") not in FAULT_STATUS:
+            raise ManifestError(f'{where}: "fault_status" must be "generated" or "not_generated"')
+        if e["fault_status"] == "not_generated":
+            _check_not_generated(e, where)
+        else:
+            _check_generated(e, where, path.parent)
         if e.get("mode", "auto") not in MODES:
             raise ManifestError(f'{where}: "mode" must be one of {", ".join(MODES)}')
         if not isinstance(e.get("base_url", False), bool) or not isinstance(e.get("provider", ""), str):
             raise ManifestError(f'{where}: "base_url" must be true or false and "provider" a string')
-    return entries
+    return Manifest(version=version, entries=entries)
 
 
 def build_command(
@@ -291,12 +348,14 @@ def render_proof(scenario: str, mode: str, fired: int, exit_code: int, state: st
     )
 
 
-def render_summary(rows: list[tuple[str, int, int, str]], color: bool) -> str:
-    """rows: (invariant id, faults fired, target exit, proof state)."""
+def render_summary(rows: list[tuple[str, Optional[int], Optional[int], str]], color: bool) -> str:
+    """rows: (invariant id, faults fired, target exit, proof state); None prints as "-"."""
     width = max(len("invariant"), *(len(row[0]) for row in rows))
     lines = [paint("=== prove-all ===", "bold", color), f"{'invariant':<{width}}  fired  exit  proof state"]
     for ident, fired, exit_code, state in rows:
-        lines.append(f"{ident:<{width}}  {fired:>5}  {exit_code:>4}  {paint(state, state_color(state), color)}")
+        fired_text = "-" if fired is None else str(fired)
+        exit_text = "-" if exit_code is None else str(exit_code)
+        lines.append(f"{ident:<{width}}  {fired_text:>5}  {exit_text:>4}  {paint(state, state_color(state), color)}")
     return "\n".join(lines)
 
 
@@ -351,12 +410,16 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     return ns, target
 
 
-def run_all(ns: argparse.Namespace, entries: list[dict], binary: Path, color: bool) -> int:
+def run_all(ns: argparse.Namespace, manifest: Manifest, binary: Path, color: bool) -> int:
     manifest_dir = Path(ns.manifest).parent
     rows = []
-    for e in entries:
+    for e in manifest.entries:
         print(paint(f"=== invariant: {e['id']} ===", "bold", color), flush=True)
         print(e["invariant"], flush=True)
+        if e["fault_status"] == "not_generated":
+            print(f"{paint(NOT_GENERATED, 'dim', color)}: {e['fault_reason']}", flush=True)
+            rows.append((e["id"], None, None, NOT_GENERATED))
+            continue
         config = str(manifest_dir / e["config"]) if "config" in e else None
         report = Path(ns.reports_dir) / f"{e['id']}.report.json"
         mode = e.get("mode", "auto")
@@ -377,10 +440,10 @@ def run_all(ns: argparse.Namespace, entries: list[dict], binary: Path, color: bo
 
 def main(argv: Optional[list[str]] = None) -> int:
     ns, target = parse_args(sys.argv[1:] if argv is None else argv)
-    entries = []
+    manifest = None
     if ns.manifest:
         try:
-            entries = load_manifest(Path(ns.manifest))
+            manifest = load_manifest(Path(ns.manifest))
         except ManifestError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return EXIT_USAGE
@@ -395,7 +458,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     color = use_color(ns.color, sys.stdout.isatty(), dict(os.environ))
     if ns.manifest:
-        return run_all(ns, entries, binary, color)
+        return run_all(ns, manifest, binary, color)
 
     command = build_command(
         binary, report=ns.report, target=target, config=ns.config, scenario=ns.scenario,

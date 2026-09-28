@@ -123,6 +123,9 @@ class ColorTests(unittest.TestCase):
         invalid = rf.render_proof("s.yaml", "proxy", 0, 3, "invalid evidence: nothing was injected", "r.json", color=True)
         self.assertIn("\033[33m", invalid)  # yellow for invalid
 
+    def test_not_generated_has_its_own_colour(self):
+        self.assertEqual(rf.state_color(rf.NOT_GENERATED), "dim")
+
 
 class ArgTests(unittest.TestCase):
     def test_split_target_after_double_dash(self):
@@ -162,34 +165,73 @@ def entry(**overrides):
     return {k: v for k, v in base.items() if v is not None}
 
 
+def gap(**overrides):
+    base = {
+        "id": "human-approval",
+        "invariant": "every refund over the limit has a recorded approval",
+        "fault_status": "not_generated",
+        "fault_reason": "no injectable boundary",
+    }
+    base.update(overrides)
+    return {k: v for k, v in base.items() if v is not None}
+
+
 class ManifestTests(unittest.TestCase):
-    def load(self, data):
+    def load(self, data, links=None):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "manifest.json"
             path.write_text(json.dumps(data))
+            for name, target in (links or {}).items():
+                (Path(tmp) / name).symlink_to(target)
             return rf.load_manifest(path)
 
-    def test_valid_manifest_loads(self):
-        entries = self.load({"version": 1, "invariants": [entry(), entry(id="second", config=None, scenario="llm-api-degraded")]})
-        self.assertEqual([e["id"] for e in entries], ["no-auto-route", "second"])
+    def test_v1_entries_load_as_generated(self):
+        manifest = self.load({"version": 1, "invariants": [entry(), entry(id="second", config=None, scenario="llm-api-degraded")]})
+        self.assertEqual(manifest.version, 1)
+        self.assertEqual([e["id"] for e in manifest.entries], ["no-auto-route", "second"])
+        self.assertEqual([e["fault_status"] for e in manifest.entries], ["generated", "generated"])
+
+    def test_v2_manifest_loads_both_statuses(self):
+        manifest = self.load({"version": 2, "invariants": [entry(fault_status="generated"), gap()]})
+        self.assertEqual(manifest.version, 2)
+        self.assertEqual([e["fault_status"] for e in manifest.entries], ["generated", "not_generated"])
+
+    def test_not_generated_may_keep_a_gate(self):
+        manifest = self.load({"version": 2, "invariants": [gap(gate=["pytest", "-q"])]})
+        self.assertEqual(manifest.entries[0]["gate"], ["pytest", "-q"])
 
     def test_invalid_manifests_are_rejected(self):
         cases = {
-            "wrong version": {"version": 2, "invariants": [entry()]},
+            "unknown version": {"version": 7, "invariants": [entry()]},
             "no invariants": {"version": 1, "invariants": []},
             "bad id": {"version": 1, "invariants": [entry(id="Not A Slug")]},
             "duplicate id": {"version": 1, "invariants": [entry(), entry()]},
             "no invariant text": {"version": 1, "invariants": [entry(invariant="")]},
             "config and scenario": {"version": 1, "invariants": [entry(scenario="llm-api-degraded")]},
             "neither config nor scenario": {"version": 1, "invariants": [entry(config=None)]},
+            "empty scenario": {"version": 1, "invariants": [entry(config=None, scenario="")]},
             "gate as a string": {"version": 1, "invariants": [entry(gate="node --test")]},
             "empty gate": {"version": 1, "invariants": [entry(gate=[])]},
             "unknown mode": {"version": 1, "invariants": [entry(mode="docker")]},
             "base_url as a string": {"version": 1, "invariants": [entry(base_url="yes")]},
+            "absolute config": {"version": 1, "invariants": [entry(config="/etc/hosts")]},
+            "config escaping the directory": {"version": 1, "invariants": [entry(config="../outside.yaml")]},
+            "fault_status in v1": {"version": 1, "invariants": [entry(fault_status="generated")]},
+            "v2 without fault_status": {"version": 2, "invariants": [entry()]},
+            "v2 unknown fault_status": {"version": 2, "invariants": [entry(fault_status="skipped")]},
+            "not_generated with config": {"version": 2, "invariants": [gap(config="x.yaml")]},
+            "not_generated with scenario": {"version": 2, "invariants": [gap(scenario="llm-api-degraded")]},
+            "not_generated without reason": {"version": 2, "invariants": [gap(fault_reason=None)]},
+            "not_generated with a blank reason": {"version": 2, "invariants": [gap(fault_reason="  ")]},
+            "not_generated with a bad gate": {"version": 2, "invariants": [gap(gate="pytest")]},
         }
         for name, data in cases.items():
             with self.subTest(name), self.assertRaises(rf.ManifestError):
                 self.load(data)
+
+    def test_config_symlink_out_of_the_directory_is_rejected(self):
+        with self.assertRaises(rf.ManifestError):
+            self.load({"version": 1, "invariants": [entry(config="link.yaml")]}, links={"link.yaml": "/etc/hosts"})
 
     def test_unreadable_manifest_is_a_manifest_error(self):
         with self.assertRaises(rf.ManifestError):
@@ -226,6 +268,14 @@ class AggregateTests(unittest.TestCase):
         text = rf.render_summary([("a", 6, 1, self.SILENT), ("bb", 2, 0, self.PROVEN)], color=False)
         self.assertIn("a              6     1  silent failure confirmed", text)
         self.assertIn("bb             2     0  invariant proven under fault", text)
+
+    def test_not_generated_never_changes_the_exit(self):
+        self.assertEqual(rf.aggregate_exit([self.PROVEN, rf.NOT_GENERATED]), rf.EXIT_OK)
+        self.assertEqual(rf.aggregate_exit([rf.NOT_GENERATED]), rf.EXIT_OK)
+
+    def test_summary_prints_dashes_when_nothing_ran(self):
+        text = rf.render_summary([("a", 6, 1, self.SILENT), ("gap", None, None, rf.NOT_GENERATED)], color=False)
+        self.assertIn("gap" + " " * 12 + "-" + " " * 5 + "-  fault not generated", text)
 
 
 # A stand-in faultkit: writes a report with one fired event and exits with $FAKE_EXIT.
@@ -276,6 +326,17 @@ class EndToEndTests(unittest.TestCase):
         manifest.write_text("{}")
         code, _ = self.main(["--manifest", str(manifest)])
         self.assertEqual(code, rf.EXIT_USAGE)
+
+    def test_v2_manifest_never_runs_not_generated_entries(self):
+        manifest = self.tmp / ".faultkit" / "invariants" / "manifest.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(json.dumps({"version": 2, "invariants": [entry(fault_status="generated"), gap()]}))
+        reports = self.tmp / "reports"
+        code, out = self.main(["--manifest", str(manifest), "--reports-dir", str(reports)])
+        self.assertEqual(code, rf.EXIT_TARGET_FAILED)
+        self.assertEqual([p.name for p in reports.iterdir()], ["no-auto-route.report.json"])
+        self.assertIn("fault not generated: no injectable boundary", out)
+        self.assertIn("fault not generated", out.split("=== prove-all ===")[1])
 
 
 if __name__ == "__main__":
