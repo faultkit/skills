@@ -512,6 +512,65 @@ class EndToEndTests(unittest.TestCase):
         code, _ = self.main(["--manifest", str(manifest), "--values", str(values)])
         self.assertEqual(code, rf.EXIT_USAGE)
 
+    def test_the_outcomes_table_follows_prove_all(self):
+        manifest = self.tmp / "manifest.json"
+        manifest.write_text(json.dumps({"version": 3, "invariants": [entry(fault_status="generated", outcome="UO-1"), gap()]}))
+        values = self.tmp / "values.md"
+        values.write_text("## Business value\nv\n\n## Unacceptable outcomes\n- UO-1: a\n- UO-2: b\n")
+        code, out = self.main(["--manifest", str(manifest), "--values", str(values), "--reports-dir", str(self.tmp / "reports")])
+        self.assertEqual(code, rf.EXIT_TARGET_FAILED)
+        after = out.split("=== prove-all ===")[1]
+        self.assertIn("=== outcomes ===", after)
+        self.assertIn("declared 2, covered 1, uncovered 1, unlinked invariants 1", after)
+
+    def test_no_values_file_means_no_outcomes_table(self):
+        manifest = self.tmp / "manifest.json"
+        manifest.write_text(json.dumps({"version": 1, "invariants": [entry()]}))
+        cwd = os.getcwd()
+        os.chdir(self.tmp)
+        try:
+            _, out = self.main(["--manifest", str(manifest), "--reports-dir", str(self.tmp / "reports")])
+        finally:
+            os.chdir(cwd)
+        self.assertNotIn("=== outcomes ===", out)
+
+
+class OutcomeTableTests(unittest.TestCase):
+    PROVEN, SILENT = "invariant proven under fault", "silent failure confirmed"
+    INVALID, ERROR = "invalid evidence: nothing was injected", "error: faultkit exited 2"
+
+    def values(self, *ids):
+        return rf.Values(business_value="v", outcomes=[rf.Outcome(i, f"text of {i}") for i in ids])
+
+    def test_worst_state_follows_the_severity_order(self):
+        self.assertEqual(rf.worst_state([self.PROVEN, self.SILENT]), self.SILENT)
+        self.assertEqual(rf.worst_state([self.SILENT, self.INVALID]), self.SILENT)
+        self.assertEqual(rf.worst_state([self.PROVEN, rf.NOT_GENERATED]), rf.NOT_GENERATED)
+        self.assertEqual(rf.worst_state([self.INVALID, rf.NOT_GENERATED]), self.INVALID)
+        self.assertEqual(rf.worst_state([self.PROVEN, self.ERROR, self.SILENT]), self.ERROR)
+
+    def test_the_table_covers_every_declared_outcome(self):
+        entries = [{"id": "paid", "outcome": "UO-1"}, {"id": "route", "outcome": "UO-2"}, {"id": "charge", "outcome": "UO-2"}, {"id": "loose"}]
+        states = {"paid": self.PROVEN, "route": self.PROVEN, "charge": self.SILENT, "loose": self.PROVEN}
+        lines = rf.render_outcomes(self.values("UO-1", "UO-2", "UO-3"), entries, states, color=False).splitlines()
+        self.assertEqual(lines, [
+            "=== outcomes ===",
+            "outcome" + "  " + "invariants" + " " * 5 + "worst state",
+            "UO-1" + " " * 5 + "paid" + " " * 11 + self.PROVEN,
+            "UO-2" + " " * 5 + "route, charge" + "  " + self.SILENT,
+            "UO-3" + " " * 5 + "-" + " " * 14 + "no invariant yet",
+            "declared 3, covered 2, uncovered 1, unlinked invariants 1",
+        ])
+
+    def test_outcomes_are_listed_in_id_order(self):
+        text = rf.render_outcomes(self.values("UO-12", "UO-2"), [], {}, color=False)
+        self.assertLess(text.index("UO-2 "), text.index("UO-12"))
+
+    def test_an_outcome_covered_only_by_a_not_generated_entry_is_covered(self):
+        lines = rf.render_outcomes(self.values("UO-1"), [{"id": "gap", "outcome": "UO-1"}], {"gap": rf.NOT_GENERATED}, color=False).splitlines()
+        self.assertTrue(lines[2].endswith(rf.NOT_GENERATED))
+        self.assertEqual(lines[-1], "declared 1, covered 1, uncovered 0, unlinked invariants 0")
+
 
 class ValuesTests(unittest.TestCase):
     def test_valid_fixtures_parse_to_their_json(self):

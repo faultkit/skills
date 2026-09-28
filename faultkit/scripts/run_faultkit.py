@@ -69,6 +69,9 @@ SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 FAULT_STATUS = ("generated", "not_generated")
 NOT_GENERATED = "fault not generated"
+NO_INVARIANT = "no invariant yet"
+# Worst first. States are matched by prefix, as in STATE_COLOR.
+SEVERITY = ("error", "silent failure confirmed", "invalid evidence", "fault not generated", "invariant proven under fault")
 
 V3_TOP = ("values", "registry")
 V3_ENTRY = ("outcome", "source")
@@ -94,6 +97,7 @@ STATE_COLOR = [
     ("invalid evidence", "yellow"),
     ("error", "magenta"),
     ("fault not generated", "dim"),
+    ("no invariant yet", "dim"),
 ]
 
 
@@ -609,6 +613,28 @@ def render_summary(rows: list[tuple[str, Optional[int], Optional[int], str]], co
     return "\n".join(lines)
 
 
+def worst_state(states: list[str]) -> str:
+    """The worst of several proof states, by SEVERITY."""
+    return min(states, key=lambda state: next(i for i, prefix in enumerate(SEVERITY) if state.startswith(prefix)))
+
+
+def render_outcomes(values: Values, entries: list[dict], states: dict[str, str], color: bool) -> str:
+    """The === outcomes === table: each declared outcome, in id order, with its invariants and their worst state."""
+    rows = []
+    for outcome in sorted(values.outcomes, key=lambda o: int(o.id[3:])):
+        ids = [e["id"] for e in entries if e.get("outcome") == outcome.id]
+        rows.append((outcome.id, ", ".join(ids) or "-", worst_state([states[i] for i in ids]) if ids else NO_INVARIANT))
+    width_id = max(len("outcome"), *(len(row[0]) for row in rows))
+    width_ids = max(len("invariants"), *(len(row[1]) for row in rows))
+    lines = [paint("=== outcomes ===", "bold", color), f"{'outcome':<{width_id}}  {'invariants':<{width_ids}}  worst state"]
+    for ident, ids, state in rows:
+        lines.append(f"{ident:<{width_id}}  {ids:<{width_ids}}  {paint(state, state_color(state), color)}")
+    covered = sum(1 for row in rows if row[2] != NO_INVARIANT)
+    unlinked = sum(1 for e in entries if "outcome" not in e)
+    lines.append(f"declared {len(rows)}, covered {covered}, uncovered {len(rows) - covered}, unlinked invariants {unlinked}")
+    return "\n".join(lines)
+
+
 def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     if "--" in argv:
         split = argv.index("--")
@@ -691,6 +717,8 @@ def run_all(ns: argparse.Namespace, manifest: Manifest, binary: Path, color: boo
         ), flush=True)
         rows.append((e["id"], fired, exit_code, state))
     print(render_summary(rows, color), flush=True)
+    if values is not None:
+        print(render_outcomes(values, manifest.entries, {row[0]: row[3] for row in rows}, color), flush=True)
     return aggregate_exit([row[3] for row in rows])
 
 

@@ -344,6 +344,27 @@ Before each run the helper deletes that invariant's old report. When a run
 leaves no valid report, the state is `error: report missing or malformed`
 and the helper exits 2; a missing report never counts as zero faults fired.
 
+With a values file, the helper checks every `outcome` before anything
+runs. It then prints a second table after `=== prove-all ===`, one row per
+declared outcome, in id order. Each row lists the invariants that name the
+outcome and their worst state (`error` > `silent failure confirmed` >
+`invalid evidence` > `fault not generated` > `invariant proven under
+fault`). An outcome no invariant names is `no invariant yet`. The helper
+finds the file through `--values PATH`, else the manifest's `values`, else
+`.faultkit/values.md`. The table never changes the exit code.
+
+```text
+=== outcomes ===
+outcome  invariants                     worst state
+UO-1     paid-invoice-never-escalated   invariant proven under fault
+UO-2     fallback-never-auto-routes     silent failure confirmed
+UO-3     -                              no invariant yet
+declared 3, covered 2, uncovered 1, unlinked invariants 1
+```
+
+`unlinked invariants` counts manifest entries that name no outcome. Link
+them, or declare the outcome they protect.
+
 ```bash
 python3 <skill>/scripts/run_faultkit.py --verbose \
   --manifest .faultkit/invariants/manifest.json
