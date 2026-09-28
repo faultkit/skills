@@ -288,7 +288,8 @@ project, the current directory or the one named, as Prove does.
    `not_generated` entry with its `fault_reason`, so the manifest lists
    every invariant the project has; it never runs.
 4. With new invariants, show them as a table (id, invariant, shape,
-   scenario, mode, gate; a `not_generated` row shows its reason instead) and ask one question: write them and run the whole
+   scenario, mode, gate; a `not_generated` row shows its reason instead)
+   and ask one question: write them and run the whole
    manifest, and, unless the manifest exists, keep them in the project or
    in a temporary workspace? Wait for the answer. With `--auto`, skip the
    question; the location follows "Where the proof is written". In a
@@ -296,7 +297,9 @@ project, the current directory or the one named, as Prove does.
    command with `--auto`, and end. With nothing new, go to step 6.
 5. For each new generated invariant, Prove steps 3 to 6: scenario, mode,
    gate, manifest entry. Write each `not_generated` one with its reason, by
-   "The invariant manifest" in `references/faultkit-execution.md`.
+   "The invariant manifest" in `references/faultkit-execution.md`. One gate
+   test per invariant, named after its id, so a red row names the invariant
+   that broke.
 6. Run every entry with one helper call. In the project, reports land in
    `.faultkit/reports/`; add that directory to `.gitignore` when the project
    has one. The scenario files and the manifest are meant to be committed.
