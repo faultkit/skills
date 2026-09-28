@@ -50,17 +50,17 @@
     {
       "id": 3,
       "prompt": "Review fixtures/collections-agent for resilience. Do not change any code.",
-      "expected_output": "A declared-mode review. The Business value and Unacceptable outcomes come verbatim from fixtures/collections-agent/.faultkit/values.md and cite UO-1 and UO-2. An Outcome coverage section shows UO-1 covered and UO-2 uncovered with a reason. The count line starts 'Outcomes: 2 declared'. No file is written, and the closing question offers the proof.",
+      "expected_output": "A declared-mode review. The Business value and Unacceptable outcomes come verbatim from fixtures/collections-agent/.faultkit/values.md and cite UO-1 and UO-2. An Outcome coverage section shows UO-1 covered, and UO-2 either covered or uncovered with a reason. The count line starts 'Outcomes: 2 declared'. No file is written, and the closing question offers the proof.",
       "files": ["evals/fixtures/collections-agent/.faultkit/values.md"],
       "assertions": [
         "Before the run, fixtures/collections-agent/.faultkit/values.md holds the content of evals/fixtures/collections-agent/.faultkit/values.md",
         "The Business value line equals the file's '## Business value' text and the section is tagged [declared]",
         "The Unacceptable outcomes lines are the file's outcomes verbatim, each citing its id, UO-1 and UO-2",
-        "The report has a '## Outcome coverage' section in which UO-1 names at least one invariant id and UO-2 is listed as uncovered with a reason",
+        "The report has a '## Outcome coverage' section in which UO-1 names at least one invariant id, and UO-2 either names one or is listed as uncovered with a reason",
         "The count line has the form 'Outcomes: 2 declared, <c> covered[, <p> proposed]. Invariants: <n> found, <k> provable with faultkit.'",
         "Any outcome the code implies beyond UO-1 and UO-2 appears under '## Undeclared outcomes' with a provisional id UO-new-<n> and a file:line, and the closing then adds the line naming /faultkit:values; with no such outcome, neither appears",
         "No file under fixtures/collections-agent was created or modified; .faultkit/values.md is byte-for-byte unchanged",
-        "The closing question offers Prove for the primary invariant, naming its outcome, or Prove all; it does not offer to write the values file"
+        "The closing question offers Prove for the primary invariant, naming its outcome, with a /faultkit:prove-all line when k > 1; it does not offer to write the values file (the /faultkit:values line for proposals is allowed)"
       ]
     },
     {

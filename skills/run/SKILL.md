@@ -1,6 +1,6 @@
 ---
 name: run
-description: Same as prove-all. Finds every business invariant in the project that a fault can express, keeps each as a faultkit scenario and gate in .faultkit/invariants/, runs them all locally, and reports one proof state per invariant. Only runs when invoked by the user.
+description: Same as prove-all. Finds every business invariant in the project, keeps each as a faultkit scenario and gate in .faultkit/invariants/ (or as not_generated when no fault expresses it yet), runs them locally, and reports one proof state per invariant. Only runs when invoked by the user.
 disable-model-invocation: true
 argument-hint: "[--auto] [project path]"
 allowed-tools: Bash Read Write Edit Grep Glob

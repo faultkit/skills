@@ -6,6 +6,6 @@ argument-hint: "[--auto] [path or description of the workflow]"
 
 Read `${CLAUDE_PLUGIN_ROOT}/faultkit/SKILL.md` and follow its **Review** mode for: $ARGUMENTS
 
-Do not edit code in this mode. End by showing the report and asking whether to run faultkit against the proof plan, then wait for the answer.
+Do not edit code in this mode. End by showing the report and asking one question: whether to run faultkit for the primary invariant, or, without a values file, whether to save the inferred outcomes, prove, or both. Then wait for the answer.
 
 If `$ARGUMENTS` contains `--auto`, do not ask: continue into Prove at once. The safety gate still runs first.

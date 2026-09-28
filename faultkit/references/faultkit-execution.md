@@ -211,7 +211,10 @@ lives in a temporary workspace `<ws>` made with `mktemp -d -t
 faultkit-XXXXXX`: `<ws>/invariants/`, `<ws>/reports/`, and the gates in
 `<ws>/tests/`, each gate's `gate` argv naming its test by absolute path.
 The helper still runs from the project root and replays it with
-`--manifest <ws>/invariants/manifest.json --reports-dir <ws>/reports`.
+`--manifest <ws>/invariants/manifest.json --reports-dir <ws>/reports`,
+adding `--values <ws>/values.md` when an inferred draft is there. A
+workspace manifest never carries `values`; the project's
+`.faultkit/values.md` is found from the project root.
 
 ```json
 {
@@ -267,7 +270,7 @@ Version 3 links each invariant to the outcome it protects, as declared in
     {
       "id": "paid-invoice-never-escalated",
       "outcome": "UO-1",
-      "invariant": "A paid invoice is never sent to collections.",
+      "invariant": "No invoice with a recorded payment has a collections entry in the ledger.",
       "shape": "S3",
       "fault_status": "generated",
       "config": "paid-invoice-never-escalated.yaml",
@@ -283,7 +286,7 @@ Version 3 links each invariant to the outcome it protects, as declared in
 | `registry` (top level) | version 3: no | reserved for the scenario registry: an `https` `url` and a 40-hex commit `ref` |
 | `id` | yes | kebab-case slug; names the scenario file, the gate test, and the report |
 | `invariant` | yes | one sentence over observable state |
-| `fault_status` | version 2: yes; version 1: never | `generated` (a scenario and a gate) or `not_generated` (no deterministic fault yet) |
+| `fault_status` | versions 2 and 3: yes; version 1: never | `generated` (a scenario and a gate) or `not_generated` (no deterministic fault yet) |
 | `fault_reason` | `not_generated`: yes | why no deterministic fault could be built |
 | `shape` | no | silent-failure shape, S1 to S8 |
 | `outcome` | version 3: no | the declared outcome this invariant protects, `UO-n`; several invariants may share one |
@@ -303,17 +306,20 @@ Rules:
 - Never edit an entry's scenario, gate, or fixture to turn a red row green.
   Harden the code.
 - Write version 1 while every entry is generated. When the first
-  `not_generated` entry is recorded, write version 2 and add
-  `"fault_status": "generated"` to every other entry.
+  `not_generated` entry is recorded, write version 2. Moving from version
+  1 to version 2 or 3 adds `"fault_status": "generated"` to every entry
+  that has none.
 - A `not_generated` entry never runs and never changes the helper's exit
   code. It stays in the manifest so the project's invariants are all
   listed, and it is proven once a deterministic fault exists.
-- `config` is a path relative to the manifest's directory and must stay
-  inside it, symlinks included.
+- `config` is a path relative to the manifest's directory. It must stay
+  inside it, symlinks included, and the file must exist.
 - `values`, `registry`, `outcome`, and `source` need version 3. A version 1
   or 2 manifest that carries one is an error naming the field. Write
   version 3 when the first of them is recorded; a manifest that needs none
   keeps its version.
+- `values` is relative to the repository root and must stay inside it. A
+  workspace manifest never carries it.
 - Every `outcome` must be declared in the values file. An `outcome` with no
   values file is a dangling reference, and the helper exits 4.
 
@@ -351,7 +357,9 @@ outcome and their worst state (`error` > `silent failure confirmed` >
 `invalid evidence` > `fault not generated` > `invariant proven under
 fault`). An outcome no invariant names is `no invariant yet`. The helper
 finds the file through `--values PATH`, else the manifest's `values`, else
-`.faultkit/values.md`. The table never changes the exit code.
+`.faultkit/values.md`. For a file that starts with the inferred marker,
+the table is headed `=== outcomes (inferred) ===`. The table never changes
+the exit code.
 
 ```text
 === outcomes ===

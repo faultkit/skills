@@ -13,21 +13,21 @@ returned. It is whether the business invariant still holds.
 business value -> unacceptable outcome -> invariant -> fault -> recovery -> proof
 ```
 
-Four modes share that chain. Review maps it and changes nothing. Harden
-adds the smallest guard and the test that locks it. Prove turns an
-invariant into an injected fault and reports whether the proof held. Prove
-all does that for every invariant in the project and, with the user's
-consent, keeps each one in `.faultkit/invariants/`, where CI can replay
-them.
+Five modes share that chain. Values declares what must never happen.
+Review maps the chain and changes nothing. Harden adds the smallest guard
+and the test that locks it. Prove turns an invariant into an injected
+fault and reports whether the proof held. Prove all does that for every
+invariant in the project and, with the user's consent, keeps each one in
+`.faultkit/invariants/`, where CI can replay them.
 
-An unacceptable outcome is written in the language of the business and
-names what must never happen. An invariant is a deterministic statement
-over observable state that, when it holds, prevents that outcome. If a
-script could check a sentence from the store with the model switched off,
-it is an invariant; otherwise it is an outcome, and its invariant is still
-to be derived. A user's text can be either; classify it, never assume. A
-team declares its outcomes in `.faultkit/values.md` with Values mode, and
-each proof names the outcome it protects.
+An unacceptable outcome names the harm in the language of the business.
+An invariant names the record a script reads and the condition on it
+that, when it holds, prevents that outcome. Classify a sentence by what it
+names: a record and a condition make an invariant; only the harm, in
+business words, makes an outcome, even when a script could detect it. A
+user's text can be either; classify it, never assume. A team declares its
+outcomes in `.faultkit/values.md` with Values mode, and a proof names its
+outcome when the file declares one.
 
 ## Modes
 
@@ -37,7 +37,7 @@ each proof names the outcome it protects.
 | Review | Assess, explain, or plan | Maps value, boundaries, silent-failure candidates, invariants, smallest recovery, residual risk. Changes no code. |
 | Harden | Build or fix a workflow | Counts the invariants, asks how to proceed when several are unguarded, adds the smallest deterministic guard at each action boundary and the gate test that locks it, and offers a pull request. Runs the project's tests, not faultkit. |
 | Prove | Explicitly requested fault injection | Selects or generates a faultkit scenario, writes the gate if missing, records it in the invariant manifest, obtains faultkit, runs it locally, reports the proof state. |
-| Prove all | Explicitly requested, for the whole project | Adds every invariant a fault can express to the manifest, then runs every entry and reports one proof state per invariant. |
+| Prove all | Explicitly requested, for the whole project | Adds every invariant to the manifest, the ones no fault expresses yet as `not_generated`, then runs every other entry and reports one proof state per invariant. |
 
 Prove and Prove all are opt-in. Use them only when the user asks for fault
 injection or faultkit by name, or answers yes when Review or Harden asks.
@@ -89,11 +89,14 @@ absolute path of the test. The project's own test configuration does not
 apply to it. End the report with the workspace path and say that the proof
 lives only there; running again and choosing the project keeps it.
 
-The values file follows the same rule. Only Values mode and a yes to
-Review's closing question write `.faultkit/values.md`; `--auto` never
-does. With `--auto`, Review drafts `<ws>/values.md` from the inferred
-chain, with the inferred marker line, so the workspace manifest can carry
-`values` and `outcome`.
+The values file is the one exception to the `.faultkit/` substitution
+above: it is always the project's `.faultkit/values.md`. Only Values mode
+and a yes to the question of Review or Prove all write it; `--auto` never
+does. With `--auto` and no values file, the inferred values are drafted to
+`<ws>/values.md`, with the inferred marker line, once the workspace
+exists, so the workspace manifest can carry `outcome`. A workspace
+manifest never carries `values`; its run passes `--values <ws>/values.md`
+when that draft exists.
 
 The references carry the method and the faultkit knowledge. Read the one
 the step names; do not reconstruct it by experiment.
@@ -123,9 +126,12 @@ the values file".
    text, and number new outcomes after the highest id. Never renumber, and
    never delete.
 4. Validate against the grammar, show the whole file, and ask one question:
-   write it? For each rejected proposal, offer in the same question to
-   record it under `## Out of scope`. Wait for the answer; write only on
-   yes. There is no `--auto` for this mode.
+   write it? When the draft holds a Review's proposals, the answer can
+   accept each one, drop it, or record it under `## Out of scope`; write
+   the file as the answer shapes it. Wait for the answer; write only on
+   yes. With no outcome left, because every sentence was an invariant,
+   there is no file to write: say so and end. In a non-interactive
+   session, print the file and end. There is no `--auto` for this mode.
 
 ## Review
 
@@ -134,8 +140,12 @@ Do not change code in this mode.
 0. Read `.faultkit/values.md` if it exists, by `references/values.md`.
    Declared mode: the chain's Business value and Unacceptable outcome lines
    come from the file verbatim, each outcome line cites its `UO-n`, and the
-   section is tagged `[declared]`. Inferred mode, with no file: infer them
-   in step 2 and tag the section `[inferred]`.
+   section is tagged `[declared]`. A file that starts with the inferred
+   marker is still read in declared mode, but tagged `[inferred]`; the
+   count line says `inferred` for `declared`, and the report says in one
+   line that a person confirms the file by removing that marker. Inferred
+   mode, with no file: infer them in step 2 and tag the section
+   `[inferred]`.
 1. Find the boundaries. Read `references/business-invariants.md`,
    "Boundaries to find", and list every irreversible action with its
    `file:line`. Everything else is a path to one of those.
@@ -164,7 +174,7 @@ Do not change code in this mode.
 ## Boundaries found            (file:line for each irreversible action)
 ## Silent-failure candidates   (shape, file:line, is there a check, does it gate)
 ## Invariants                  (one line each, over observable state)
-## Outcome coverage            (per outcome: UO-n, the invariant ids that protect it or none, how many are provable)
+## Outcome coverage            (declared mode: per outcome, UO-n, the invariant ids that protect it or none, how many are provable)
 ## Smallest recovery           (per invariant, from the recovery patterns)
 ## Proof plan                  (per invariant: gate test + faultkit scenario, pinned builtin or custom)
 ## Undeclared outcomes         (declared mode, when any: UO-new-n, file:line)
@@ -183,8 +193,9 @@ Do not change code in this mode.
    `Outcomes: <d> declared, <c> covered, <p> proposed. Invariants: <n> found, <k> provable with faultkit.`
    with `, <p> proposed` only when p > 0. Inferred mode:
    `Outcomes: <d> inferred, none declared. Invariants: <n> found, <k> provable with faultkit.`
-   With k = 0, say so and end without a question. In inferred mode, first
-   add the line: `/faultkit:values saves the inferred outcomes for you to correct.`
+   With k = 0, say so and end without a question, after one line: in
+   inferred mode, `/faultkit:values saves the inferred outcomes for you to correct.`;
+   in declared mode with p > 0, the proposals line from step 8.
 8. Otherwise ask one question and stop.
    - Declared mode: whether to run faultkit now for the primary invariant
      with Prove, naming the invariant, its outcome, the scenario, the
@@ -210,9 +221,10 @@ Do not change code in this mode.
    - Both: write the file, then continue.
 
    In a non-interactive session, print the Prove command, and the Prove all
-   command when k > 1, then end. With `--auto`, skip the question. In
-   inferred mode, first draft `<ws>/values.md` as "Where the proof is
-   written" says, then continue with Prove at once.
+   command when k > 1, then end. With `--auto`, skip the question and
+   continue with Prove at once. In inferred mode, the inferred values are
+   drafted to `<ws>/values.md` after Prove's safety gate, as "Where the
+   proof is written" says.
 
 ## Harden
 
@@ -318,9 +330,10 @@ found by listing a parent directory.
    all and CI replay.
    The entry carries `outcome` by "Linking invariants" in
    `references/values.md`, and so does any existing entry that protects a
-   declared outcome without naming it (shown as `link`). Writing `outcome`
-   makes the manifest version 3; a manifest that needs no version 3 field
-   keeps its version.
+   declared outcome without naming it; step 8 lists each such change as
+   `link <id> -> UO-n`. Writing `outcome` makes the manifest version 3, by
+   the version rules in "The invariant manifest"; a manifest that needs no
+   version 3 field keeps its version.
 7. Run the helper with `--verbose`, so every fired fault is visible, and let
    it print the proof block. On a terminal the block is coloured; add
    `--color always` when the output is captured for a person to read.
@@ -342,7 +355,8 @@ python3 <skill>/scripts/run_faultkit.py --verbose \
    marker: ✅ invariant proven under fault, ❌ silent failure confirmed,
    ⚠️ invalid evidence: nothing was injected. When two modes were run, close
    with a two-row table: mode, faults fired, target exit, proof state. Then
-   list every artifact created with its path. Run once per mode of the code
+   list every artifact created with its path, and each `link` from step 6.
+   Run once per mode of the code
    under test when the project has an unhardened and a hardened path.
 
 ```text
@@ -379,11 +393,14 @@ project, the current directory or the one named, as Prove does.
    gets `outcome` when it covers a declared one, and each existing entry
    that protects a declared outcome without naming it gets `outcome` in the
    same write, shown as `link`.
-4. With new invariants, show them as a table (id, outcome, invariant, shape,
-   scenario, mode, gate; a `not_generated` row shows its reason instead)
-   and ask one question: write them and run the whole
+4. With new invariants or links, show them as a table (id, outcome,
+   invariant, shape, scenario, mode, gate; a `not_generated` row shows its
+   reason instead, a `link` row only its id and outcome) and ask one
+   question: write them and run the whole
    manifest, and, unless the manifest exists, keep them in the project or
-   in a temporary workspace?
+   in a temporary workspace? Say that each `not_generated` entry lowers the
+   CI score, and fails faultkit/action at its default `threshold: 100`
+   until it is proven.
    Add one line of coverage: which outcomes the new invariants cover, and
    each declared outcome that stays uncovered with its reason. In inferred
    mode, the same compound question also asks whether to save the inferred
@@ -392,17 +409,20 @@ project, the current directory or the one named, as Prove does.
    Wait for the answer. With `--auto`, skip the
    question; the location follows "Where the proof is written". In a
    non-interactive session without `--auto`, print the table and the
-   command with `--auto`, and end. With nothing new, go to step 6.
+   command with `--auto`, and end. With nothing new and nothing to link,
+   go to step 6.
 5. For each new generated invariant, Prove steps 3 to 6: scenario, mode,
-   gate, manifest entry. Write each `not_generated` one with its reason, by
-   "The invariant manifest" in `references/faultkit-execution.md`. One gate
+   gate, manifest entry. Write each `not_generated` one with its reason,
+   and each link, by "The invariant manifest" in
+   `references/faultkit-execution.md`. One gate
    test per invariant, named after its id, so a red row names the invariant
    that broke.
 6. Run every entry with one helper call. In the project, reports land in
    `.faultkit/reports/`; add that directory to `.gitignore` when the project
    has one. The scenario files and the manifest are meant to be committed.
    In a workspace, pass `--manifest <ws>/invariants/manifest.json
-   --reports-dir <ws>/reports`.
+   --reports-dir <ws>/reports`, and `--values <ws>/values.md` when that
+   draft exists.
 
 ```bash
 python3 <skill>/scripts/run_faultkit.py --verbose \
@@ -441,8 +461,11 @@ python3 <skill>/scripts/run_faultkit.py --verbose \
 | "The code implies this outcome, I'll add it to values.md." | Propose it under Undeclared outcomes. A person declares outcomes. |
 | "They wrote the outcome, so the invariant is given." | An outcome is business language. Derive the invariant over the store; then prove that. |
 | "No values file, so I'll skip outcomes." | Infer them, tag `[inferred]`, and offer the file. Proofs kept in the project should trace to a declared outcome. |
-| "They turned that proposal down; I'll suggest it again next time." | Offer to record it under Out of scope. Review never proposes an out-of-scope outcome again. |
+| "They turned that proposal down; I'll suggest it again next time." | Offer to record it under Out of scope; once there, Review never proposes it again. |
 | "The outcome was declared after the proof, so it shows as uncovered." | Link the entry that protects it: set its `outcome` in the next manifest write. |
+| "It's `--auto`, so I'll save the inferred values to `.faultkit/values.md`." | `--auto` is never consent. Draft `<ws>/values.md`; only Values mode or a yes writes the project's file. |
+| "I'll renumber the outcomes so the ids are consecutive." | Ids are never renumbered or deleted. `UO-3` means the same thing in every commit that has it. |
+| "The report is missing, so nothing fired." | A missing or malformed report is an error, never zero faults fired. |
 
 ## Quick reference
 
