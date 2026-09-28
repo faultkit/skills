@@ -56,38 +56,6 @@ claude plugin marketplace update faultkit
 claude plugin update faultkit@faultkit
 ```
 
-## Declaring business values
-
-Say once what must never happen, in `.faultkit/values.md`:
-
-```markdown
-## Business value
-Paying customers are never treated as delinquent.
-
-## Unacceptable outcomes
-- UO-1: A final notice or a collections referral is issued for a paid invoice.
-- UO-2: A customer is charged twice for one invoice.
-```
-
-There are three ways to declare outcomes:
-
-- **`/faultkit:values`** takes your words, for example `/faultkit:values a
-  customer is never charged twice for one invoice`. It numbers the
-  outcomes, shows the file, and writes it after you say yes.
-- **Write the file yourself.** The grammar is in
-  `faultkit/references/values.md`.
-- **Name an outcome in a Prove command.** The skill derives the invariant
-  and links it.
-
-With the file, Review takes the business value and outcomes from it and
-reports which outcomes the invariants cover. It also proposes the outcomes
-it finds in the code that the file does not declare, and never adds them
-itself. `/faultkit:values` declares the ones you accept.
-
-Every proof names the outcome it protects. The helper and CI print the
-outcome coverage next to the proof table. Without a file, Review infers the
-outcomes and offers to save them for you to correct.
-
 ## Install for other agents
 
 Copy the `faultkit/` directory into your repository as
@@ -119,6 +87,43 @@ model stream must never dispatch a route. Add deterministic tests.
 ```text
 /faultkit:prove-all
 ```
+
+## Declaring business values
+
+Say once what must never happen, in `.faultkit/values.md`:
+
+```markdown
+## Business value
+Paying customers are never treated as delinquent.
+
+## Unacceptable outcomes
+- UO-1: A final notice or a collections referral is issued for a paid invoice.
+- UO-2: A customer is charged twice for one invoice.
+```
+
+There are three ways to declare outcomes:
+
+- **`/faultkit:values`** takes your words, for example `/faultkit:values a
+  customer is never charged twice for one invoice`. It numbers the
+  outcomes, shows the file, and writes it after you say yes.
+- **Answer "save" to Review's closing question.** Without a file, Review
+  infers the outcomes and offers to save them for you to correct.
+- **Write the file yourself.** The grammar is in
+  `faultkit/references/values.md`.
+
+A Prove command also takes an outcome in your words, for example
+`/faultkit:prove a paid invoice is never sent to collections`. The skill
+derives the invariant to prove, and links it when the file declares that
+outcome.
+
+With the file, Review takes the business value and outcomes from it and
+reports which outcomes the invariants cover. It also proposes the outcomes
+it finds in the code that the file does not declare, and never adds them
+itself. `/faultkit:values` declares the ones you accept.
+
+A proof names the outcome it protects when the file declares one. The
+helper and CI print the outcome coverage next to the proof table, including
+the invariants that name no outcome.
 
 ## The invariant manifest
 
