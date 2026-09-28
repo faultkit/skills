@@ -19,14 +19,16 @@ way to prove the result.
 
 | Mode | When | What it does |
 | --- | --- | --- |
+| Values | Declare what must never happen | Writes your business value and unacceptable outcomes to `.faultkit/values.md`, from your words or a review's draft, after you say yes. Changes no code. |
 | Review | Assess, explain, or plan | Maps value, boundaries, silent failures, invariants, and residual risk, and ends with how many invariants faultkit can prove. Changes no code. |
 | Harden | Build or fix a workflow | Counts the invariants, asks whether to harden them one at a time, all in a row, or on your instruction, adds the smallest deterministic guard at each action boundary and the test that locks it, and asks before opening a pull request. |
 | Prove | Explicitly requested fault injection | Selects or generates a faultkit scenario, writes the gate test if missing, obtains faultkit, runs it locally, reports the proof state. Keeps the proof in `.faultkit/invariants/` if you agree, otherwise in a temporary workspace. |
-| Prove all | Explicitly requested, whole project | Adds every invariant a fault can express to the manifest, runs them all, reports one proof state per invariant. Same choice of where the proof is kept. |
+| Prove all | Explicitly requested, whole project | Adds every invariant to the manifest, the ones no fault expresses yet as `not_generated`, runs the rest, reports one proof state per invariant. Same choice of where the proof is kept. |
 
 Prove and Prove all are opt-in. Ordinary use of the skill neither installs tools nor
 injects faults. Review ends by asking whether to run faultkit for the primary
-invariant, and names `/faultkit:prove-all` when there are more. Harden ends by
+invariant, and names `/faultkit:prove-all` when there are more; without a
+values file, the same question offers to save the inferred outcomes. Harden ends by
 asking whether to prove the change, then whether to open a pull request. Each
 question waits for your answer. Add `--auto` to any command to run the whole
 chain without stopping at the questions. The safety gate still runs first, a
@@ -42,11 +44,11 @@ one.
 /plugin install faultkit@faultkit
 ```
 
-Then `/faultkit:review`, `/faultkit:harden`, `/faultkit:prove`, and
-`/faultkit:prove-all` are available, plus `/faultkit:run`, which does the
-same as `prove-all`. The first two also trigger on their own when a
-conversation turns to resilience; `prove`, `prove-all`, and `run` run only
-when you invoke them.
+Then `/faultkit:values`, `/faultkit:review`, `/faultkit:harden`,
+`/faultkit:prove`, and `/faultkit:prove-all` are available, plus
+`/faultkit:run`, which does the same as `prove-all`. Review and Harden also
+trigger on their own when a conversation turns to resilience; `values`,
+`prove`, `prove-all`, and `run` run only when you invoke them.
 
 To pick up a new version:
 
@@ -87,6 +89,46 @@ model stream must never dispatch a route. Add deterministic tests.
 /faultkit:prove-all
 ```
 
+## Declaring business values
+
+Say once what must never happen, in `.faultkit/values.md`:
+
+```markdown
+## Business value
+Paying customers are never treated as delinquent.
+
+## Unacceptable outcomes
+- UO-1: A final notice or a collections referral is issued for a paid invoice.
+- UO-2: A customer is charged twice for one invoice.
+```
+
+There are three ways to declare outcomes:
+
+- **`/faultkit:values`** takes your words, for example `/faultkit:values a
+  customer is never charged twice for one invoice`. It numbers the
+  outcomes, shows the file, and writes it after you say yes.
+- **Answer "save" to the closing question of Review or Prove all.**
+  Without a file, both infer the outcomes and offer to save them for you
+  to correct.
+- **Write the file yourself.** The grammar is in
+  `faultkit/references/values.md`.
+
+A Prove command also takes an outcome in your words, for example
+`/faultkit:prove a paid invoice is never sent to collections`. The skill
+derives the invariant to prove, and links it when the file declares that
+outcome.
+
+With the file, Review takes the business value and outcomes from it and
+reports which outcomes the invariants cover. It also proposes the outcomes
+it finds in the code that the file does not declare, and never adds them
+itself. `/faultkit:values` declares the ones you accept.
+
+A proof names the outcome it protects when the file declares one. The
+helper prints the outcome coverage next to the proof table, including the
+invariants that name no outcome, and so does faultkit/action v1.1.0 or
+later in CI. Linking an outcome makes the manifest version 3, which
+faultkit/action v1.0.0 rejects.
+
 ## The invariant manifest
 
 Each invariant the skill proves can be kept in the project under
@@ -96,6 +138,12 @@ test. The skill asks before writing it. Without a yes, and always with
 `--auto` or in a non-interactive session, it writes into a temporary
 workspace and leaves the project untouched; a project that already has a
 manifest has said yes.
+
+Invariants that no deterministic fault can express yet are kept too, as
+`not_generated` entries with a reason (manifest version 2). They never run,
+and CI lists them next to the proven ones. They lower the CI score, so at
+faultkit/action's default `threshold: 100` each one fails the run until it
+is proven; lower the threshold to accept known gaps.
 
 Commit `.faultkit/invariants/` and the gate tests. Reports go to
 `.faultkit/reports/`, which the skill adds to `.gitignore`. From the project
@@ -110,9 +158,10 @@ curl -fsSLo run_faultkit.py \
 python3 run_faultkit.py --manifest .faultkit/invariants/manifest.json
 ```
 
-It exits 0 only when every invariant was proven under fault. Otherwise it
-exits with the worst result: 2 if a run errored, 3 if a run injected
-nothing, 1 if a silent failure was confirmed. The format is in
+It exits 0 only when every invariant that runs was proven under fault.
+Otherwise it exits with the worst result: 2 if a run errored or left no
+valid report, 3 if a run injected nothing, 1 if a silent failure was
+confirmed. The format is in
 `faultkit/references/faultkit-execution.md`, "The invariant manifest".
 
 ## The proof condition
@@ -158,9 +207,9 @@ provider, and requests that no fault matches go where your code sends them.
 
 ## Layout
 
-- `faultkit/SKILL.md`: the skill, with its four modes
+- `faultkit/SKILL.md`: the skill, with its five modes
 - `faultkit/references/`: the method, the silent-failure catalog, the
-  faultkit scenario mapping, execution and gotchas
+  faultkit scenario mapping, execution and gotchas, and the values file
 - `faultkit/scripts/run_faultkit.py`: the verified runner, for one scenario
   or the whole manifest
 - `skills/`: Claude Code plugin wrappers

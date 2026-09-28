@@ -133,7 +133,7 @@ path while the model passes through.
 
 faultkit exits 0 when the target passed, 1 when it failed, 2 on an internal
 error, 3 when no fault fired, 4 on a usage error. The skill reads them as
-three proof states:
+three proof states, plus two errors:
 
 | faultkit exit | Fired | Gate | Proof state |
 | --- | --- | --- | --- |
@@ -141,7 +141,13 @@ three proof states:
 | 0 or 1 | 0 | any | `invalid evidence: nothing was injected` |
 | 1 | > 0 | failed | `silent failure confirmed` |
 | 0 | > 0 | passed | `invariant proven under fault` |
-| 2, 4 | | | `error: faultkit exited N` |
+| 0, 1, or 3 | no valid report | | `error: report missing or malformed` |
+| any other | | | `error: faultkit exited N` |
+
+Fired is read from faultkit's report file (`"schema":
+"faultkit.dev/report/v1"`), never from its console output. A manifest entry
+with `fault_status: not_generated` has no run and no proof state; it is
+listed as `fault not generated`.
 
 The proof condition for hardened code is `faults fired > 0 AND invariant
 held`. A target that passed with nothing fired is the most dangerous
@@ -205,7 +211,10 @@ lives in a temporary workspace `<ws>` made with `mktemp -d -t
 faultkit-XXXXXX`: `<ws>/invariants/`, `<ws>/reports/`, and the gates in
 `<ws>/tests/`, each gate's `gate` argv naming its test by absolute path.
 The helper still runs from the project root and replays it with
-`--manifest <ws>/invariants/manifest.json --reports-dir <ws>/reports`.
+`--manifest <ws>/invariants/manifest.json --reports-dir <ws>/reports`,
+adding `--values <ws>/values.md` when an inferred draft is there. A
+workspace manifest never carries `values`; the project's
+`.faultkit/values.md` is found from the project root.
 
 ```json
 {
@@ -223,16 +232,70 @@ The helper still runs from the project root and replays it with
 }
 ```
 
+Version 2 lists every invariant the project has, including the ones no
+deterministic fault can express yet. Every entry carries `fault_status`:
+
+```json
+{
+  "version": 2,
+  "invariants": [
+    {
+      "id": "triaged-only-when-model-classified",
+      "invariant": "No ticket is stored as triaged unless the model produced the classification.",
+      "shape": "S2",
+      "fault_status": "generated",
+      "config": "triaged-only-when-model-classified.yaml",
+      "base_url": true,
+      "gate": ["node", "--test", "test/triaged-only-when-model-classified.test.mjs"]
+    },
+    {
+      "id": "refund-over-limit-needs-approval",
+      "invariant": "No refund over the limit is issued without a recorded human approval.",
+      "shape": "S8",
+      "fault_status": "not_generated",
+      "fault_reason": "The approval is written by the billing service, which this project does not call over HTTP."
+    }
+  ]
+}
+```
+
+Version 3 links each invariant to the outcome it protects, as declared in
+`.faultkit/values.md` (`references/values.md`):
+
+```json
+{
+  "version": 3,
+  "values": ".faultkit/values.md",
+  "invariants": [
+    {
+      "id": "paid-invoice-never-escalated",
+      "outcome": "UO-1",
+      "invariant": "No invoice with a recorded payment has a collections entry in the ledger.",
+      "shape": "S3",
+      "fault_status": "generated",
+      "config": "paid-invoice-never-escalated.yaml",
+      "gate": ["pytest", "-q", "tests/test_paid_invoice.py"]
+    }
+  ]
+}
+```
+
 | Field | Required | Meaning |
 | --- | --- | --- |
+| `values` (top level) | version 3: no | the values file, relative to the repository root; without it, `.faultkit/values.md` is used when it exists |
+| `registry` (top level) | version 3: no | reserved for the scenario registry: an `https` `url` and a 40-hex commit `ref` |
 | `id` | yes | kebab-case slug; names the scenario file, the gate test, and the report |
 | `invariant` | yes | one sentence over observable state |
+| `fault_status` | versions 2 and 3: yes; version 1: never | `generated` (a scenario and a gate) or `not_generated` (no deterministic fault yet) |
+| `fault_reason` | `not_generated`: yes | why no deterministic fault could be built |
 | `shape` | no | silent-failure shape, S1 to S8 |
-| `config` or `scenario` | exactly one | a scenario file relative to the manifest, or a builtin name (a sample, not a proof: builtins fire at 5 to 20%) |
+| `outcome` | version 3: no | the declared outcome this invariant protects, `UO-n`; several invariants may share one |
+| `source` | version 3: no | reserved for a vendored registry scenario: `registry`, `id`, `version`, and the `sha256` of the `config` file, checked before any run |
+| `config` or `scenario` | `generated`: exactly one; `not_generated`: neither | a scenario file relative to the manifest, or a builtin name (a sample, not a proof: builtins fire at 5 to 20%) |
 | `mode` | no | `auto` (default), `proxy`, `ebpf` |
 | `base_url` | no | `true` for `--base-url` injection |
 | `provider` | no | narrow a builtin's fixture-driven failure modes to one provider; a custom scenario never needs it; `--provider` needs faultkit v0.1.3 or later |
-| `gate` | yes | the gate's command as an argv list, run from the project root without a shell |
+| `gate` | `generated`: yes; `not_generated`: optional | the gate's command as an argv list, run from the project root without a shell |
 
 Rules:
 
@@ -242,6 +305,23 @@ Rules:
   invariant that broke.
 - Never edit an entry's scenario, gate, or fixture to turn a red row green.
   Harden the code.
+- Write version 1 while every entry is generated. When the first
+  `not_generated` entry is recorded, write version 2. Moving from version
+  1 to version 2 or 3 adds `"fault_status": "generated"` to every entry
+  that has none.
+- A `not_generated` entry never runs and never changes the helper's exit
+  code. It stays in the manifest so the project's invariants are all
+  listed, and it is proven once a deterministic fault exists.
+- `config` is a path relative to the manifest's directory. It must stay
+  inside it, symlinks included, and the file must exist.
+- `values`, `registry`, `outcome`, and `source` need version 3. A version 1
+  or 2 manifest that carries one is an error naming the field. Write
+  version 3 when the first of them is recorded; a manifest that needs none
+  keeps its version.
+- `values` is relative to the repository root and must stay inside it. A
+  workspace manifest never carries it.
+- Every `outcome` must be declared in the values file. An `outcome` with no
+  values file is a dangling reference, and the helper exits 4.
 
 ## Running with the helper
 
@@ -263,6 +343,36 @@ It prints a proof block per invariant and a closing `=== prove-all ===` table,
 and exits with the worst result: 2 if any run errored, else 3 if any
 injected nothing, else 1 if any silent failure was confirmed, else 0. A
 malformed manifest exits 4 before anything runs.
+
+A `not_generated` entry prints `fault not generated` with its reason, shows
+`-` for fired and exit in the table, and never changes the exit code.
+Before each run the helper deletes that invariant's old report. When a run
+leaves no valid report, the state is `error: report missing or malformed`
+and the helper exits 2; a missing report never counts as zero faults fired.
+
+With a values file, the helper checks every `outcome` before anything
+runs. It then prints a second table after `=== prove-all ===`, one row per
+declared outcome, in id order. Each row gives the worst state of the
+invariants that name the outcome (`error` > `silent failure confirmed` >
+`invalid evidence` > `fault not generated` > `invariant proven under
+fault`), then those invariants, one per line. An outcome no invariant names is `no invariant yet`. The helper
+finds the file through `--values PATH`, else the manifest's `values`, else
+`.faultkit/values.md`. For a file that starts with the inferred marker,
+the table is headed `=== outcomes (inferred) ===`. The table never changes
+the exit code.
+
+```text
+=== outcomes ===
+outcome  worst state                   invariants
+UO-1     invariant proven under fault  paid-invoice-never-escalated
+UO-2     silent failure confirmed      fallback-never-auto-routes
+                                       charge-once-per-invoice
+UO-3     no invariant yet              -
+declared 3, covered 2, uncovered 1, unlinked invariants 1
+```
+
+`unlinked invariants` counts manifest entries that name no outcome. Link
+them, or declare the outcome they protect.
 
 ```bash
 python3 <skill>/scripts/run_faultkit.py --verbose \
