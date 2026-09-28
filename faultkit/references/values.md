@@ -142,9 +142,9 @@ manifest").
   outcome.
 - An outcome can be declared after an invariant that already protects it.
   In that case the next Prove or Prove all sets the entry's `outcome` and
-  shows it as `link`. Prove writes it with its own entry. Prove all lists
-  it in the table it shows before writing, and writes it even when nothing
-  else is new. Neither asks a question of its own; it is the same file
+  shows it as `link`. Prove writes every such link in the same manifest
+  write as the entry it records. Prove all lists them in the table it
+  shows before writing, and writes them even when nothing else is new. Neither asks a question of its own; it is the same file
   under the same consent.
 - The first `outcome` makes the manifest version 3. A version 1 manifest
   moving to version 3 gives every entry `"fault_status": "generated"`
