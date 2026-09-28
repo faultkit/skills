@@ -644,12 +644,14 @@ class OutcomeTableTests(unittest.TestCase):
         entries = [{"id": "paid", "outcome": "UO-1"}, {"id": "route", "outcome": "UO-2"}, {"id": "charge", "outcome": "UO-2"}, {"id": "loose"}]
         states = {"paid": self.PROVEN, "route": self.PROVEN, "charge": self.SILENT, "loose": self.PROVEN}
         lines = rf.render_outcomes(self.values("UO-1", "UO-2", "UO-3"), entries, states, color=False).splitlines()
+        width = len(self.PROVEN)
         self.assertEqual(lines, [
             "=== outcomes ===",
-            "outcome" + "  " + "invariants" + " " * 5 + "worst state",
-            "UO-1" + " " * 5 + "paid" + " " * 11 + self.PROVEN,
-            "UO-2" + " " * 5 + "route, charge" + "  " + self.SILENT,
-            "UO-3" + " " * 5 + "-" + " " * 14 + "no invariant yet",
+            "outcome  " + "worst state".ljust(width) + "  invariants",
+            "UO-1     " + self.PROVEN.ljust(width) + "  paid",
+            "UO-2     " + self.SILENT.ljust(width) + "  route",
+            " " * 9 + " " * width + "  charge",
+            "UO-3     " + "no invariant yet".ljust(width) + "  -",
             "declared 3, covered 2, uncovered 1, unlinked invariants 1",
         ])
 
@@ -659,7 +661,7 @@ class OutcomeTableTests(unittest.TestCase):
 
     def test_an_outcome_covered_only_by_a_not_generated_entry_is_covered(self):
         lines = rf.render_outcomes(self.values("UO-1"), [{"id": "gap", "outcome": "UO-1"}], {"gap": rf.NOT_GENERATED}, color=False).splitlines()
-        self.assertTrue(lines[2].endswith(rf.NOT_GENERATED))
+        self.assertTrue(lines[2].startswith("UO-1     " + rf.NOT_GENERATED))
         self.assertEqual(lines[-1], "declared 1, covered 1, uncovered 0, unlinked invariants 0")
 
     def test_inferred_values_get_a_different_header(self):

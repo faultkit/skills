@@ -635,18 +635,21 @@ def worst_state(states: list[str]) -> str:
 
 
 def render_outcomes(values: Values, entries: list[dict], states: dict[str, str], color: bool) -> str:
-    """The === outcomes === table: each declared outcome, in id order, with its invariants and their worst state."""
+    """The === outcomes === table: each declared outcome, in id order, its worst state, and its invariants, one per line."""
     rows = []
     for outcome in sorted(values.outcomes, key=lambda o: int(o.id[3:])):
         ids = [e["id"] for e in entries if e.get("outcome") == outcome.id]
-        rows.append((outcome.id, ", ".join(ids) or "-", worst_state([states[i] for i in ids]) if ids else NO_INVARIANT))
+        rows.append((outcome.id, worst_state([states[i] for i in ids]) if ids else NO_INVARIANT, ids or ["-"]))
     width_id = max(len("outcome"), *(len(row[0]) for row in rows))
-    width_ids = max(len("invariants"), *(len(row[1]) for row in rows))
+    width_state = max(len("worst state"), *(len(row[1]) for row in rows))
     header = "=== outcomes (inferred) ===" if values.inferred else "=== outcomes ==="
-    lines = [paint(header, "bold", color), f"{'outcome':<{width_id}}  {'invariants':<{width_ids}}  worst state"]
-    for ident, ids, state in rows:
-        lines.append(f"{ident:<{width_id}}  {ids:<{width_ids}}  {paint(state, state_color(state), color)}")
-    covered = sum(1 for row in rows if row[2] != NO_INVARIANT)
+    lines = [paint(header, "bold", color), f"{'outcome':<{width_id}}  {'worst state':<{width_state}}  invariants"]
+    for ident, state, ids in rows:
+        # Padded outside the color codes, so the columns line up when painted.
+        cell = paint(state, state_color(state), color) + " " * (width_state - len(state))
+        lines.append(f"{ident:<{width_id}}  {cell}  {ids[0]}")
+        lines += [" " * (width_id + width_state + 4) + i for i in ids[1:]]
+    covered = sum(1 for row in rows if row[1] != NO_INVARIANT)
     unlinked = sum(1 for e in entries if "outcome" not in e)
     lines.append(f"declared {len(rows)}, covered {covered}, uncovered {len(rows) - covered}, unlinked invariants {unlinked}")
     return "\n".join(lines)

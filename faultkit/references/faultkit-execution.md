@@ -352,10 +352,10 @@ and the helper exits 2; a missing report never counts as zero faults fired.
 
 With a values file, the helper checks every `outcome` before anything
 runs. It then prints a second table after `=== prove-all ===`, one row per
-declared outcome, in id order. Each row lists the invariants that name the
-outcome and their worst state (`error` > `silent failure confirmed` >
+declared outcome, in id order. Each row gives the worst state of the
+invariants that name the outcome (`error` > `silent failure confirmed` >
 `invalid evidence` > `fault not generated` > `invariant proven under
-fault`). An outcome no invariant names is `no invariant yet`. The helper
+fault`), then those invariants, one per line. An outcome no invariant names is `no invariant yet`. The helper
 finds the file through `--values PATH`, else the manifest's `values`, else
 `.faultkit/values.md`. For a file that starts with the inferred marker,
 the table is headed `=== outcomes (inferred) ===`. The table never changes
@@ -363,10 +363,11 @@ the exit code.
 
 ```text
 === outcomes ===
-outcome  invariants                    worst state
-UO-1     paid-invoice-never-escalated  invariant proven under fault
-UO-2     fallback-never-auto-routes    silent failure confirmed
-UO-3     -                             no invariant yet
+outcome  worst state                   invariants
+UO-1     invariant proven under fault  paid-invoice-never-escalated
+UO-2     silent failure confirmed      fallback-never-auto-routes
+                                       charge-once-per-invoice
+UO-3     no invariant yet              -
 declared 3, covered 2, uncovered 1, unlinked invariants 1
 ```
 
