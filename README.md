@@ -19,6 +19,7 @@ way to prove the result.
 
 | Mode | When | What it does |
 | --- | --- | --- |
+| Values | Declare what must never happen | Writes your business value and unacceptable outcomes to `.faultkit/values.md`, from your words or a review's draft, after you say yes. Changes no code. |
 | Review | Assess, explain, or plan | Maps value, boundaries, silent failures, invariants, and residual risk, and ends with how many invariants faultkit can prove. Changes no code. |
 | Harden | Build or fix a workflow | Counts the invariants, asks whether to harden them one at a time, all in a row, or on your instruction, adds the smallest deterministic guard at each action boundary and the test that locks it, and asks before opening a pull request. |
 | Prove | Explicitly requested fault injection | Selects or generates a faultkit scenario, writes the gate test if missing, obtains faultkit, runs it locally, reports the proof state. Keeps the proof in `.faultkit/invariants/` if you agree, otherwise in a temporary workspace. |
@@ -42,11 +43,11 @@ one.
 /plugin install faultkit@faultkit
 ```
 
-Then `/faultkit:review`, `/faultkit:harden`, `/faultkit:prove`, and
-`/faultkit:prove-all` are available, plus `/faultkit:run`, which does the
-same as `prove-all`. The first two also trigger on their own when a
-conversation turns to resilience; `prove`, `prove-all`, and `run` run only
-when you invoke them.
+Then `/faultkit:values`, `/faultkit:review`, `/faultkit:harden`,
+`/faultkit:prove`, and `/faultkit:prove-all` are available, plus
+`/faultkit:run`, which does the same as `prove-all`. Review and Harden also
+trigger on their own when a conversation turns to resilience; `values`,
+`prove`, `prove-all`, and `run` run only when you invoke them.
 
 To pick up a new version:
 
@@ -54,6 +55,38 @@ To pick up a new version:
 claude plugin marketplace update faultkit
 claude plugin update faultkit@faultkit
 ```
+
+## Declaring business values
+
+Say once what must never happen, in `.faultkit/values.md`:
+
+```markdown
+## Business value
+Paying customers are never treated as delinquent.
+
+## Unacceptable outcomes
+- UO-1: A final notice or a collections referral is issued for a paid invoice.
+- UO-2: A customer is charged twice for one invoice.
+```
+
+There are three ways to declare outcomes:
+
+- **`/faultkit:values`** takes your words, for example `/faultkit:values a
+  customer is never charged twice for one invoice`. It numbers the
+  outcomes, shows the file, and writes it after you say yes.
+- **Write the file yourself.** The grammar is in
+  `faultkit/references/values.md`.
+- **Name an outcome in a Prove command.** The skill derives the invariant
+  and links it.
+
+With the file, Review takes the business value and outcomes from it and
+reports which outcomes the invariants cover. It also proposes the outcomes
+it finds in the code that the file does not declare, and never adds them
+itself. `/faultkit:values` declares the ones you accept.
+
+Every proof names the outcome it protects. The helper and CI print the
+outcome coverage next to the proof table. Without a file, Review infers the
+outcomes and offers to save them for you to correct.
 
 ## Install for other agents
 
@@ -165,7 +198,7 @@ provider, and requests that no fault matches go where your code sends them.
 
 - `faultkit/SKILL.md`: the skill, with its four modes
 - `faultkit/references/`: the method, the silent-failure catalog, the
-  faultkit scenario mapping, execution and gotchas
+  faultkit scenario mapping, execution and gotchas, and the values file
 - `faultkit/scripts/run_faultkit.py`: the verified runner, for one scenario
   or the whole manifest
 - `skills/`: Claude Code plugin wrappers
