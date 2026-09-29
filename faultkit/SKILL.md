@@ -282,6 +282,8 @@ Do not change code in this mode.
      its guard at `file:line`, its gate test, and its proof state, quoting
      the `=== proof ===` block or the `=== prove-all ===` table when a proof
      ran, and saying "not proven with faultkit" when none did.
+   - `git` and `gh` sign in with the user's own setup. Never read, ask for,
+     print, or pass a token, and never set one in a command's environment.
    - Without `gh`, a remote, or push rights, say so and print the commands.
 
 ## Prove

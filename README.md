@@ -209,10 +209,15 @@ The helper then makes no network call.
 
 Two more things reach the network, both under your control. Harden pushes a
 branch and opens a pull request on your project's own remote only after you
-say yes, and never with `--auto`. The test command being proven runs as it
+say yes, and never with `--auto`. `git` and `gh` sign in with your own setup,
+and neither command is pre-approved. The test command being proven runs as it
 normally would: faultkit proxies its HTTP(S) traffic locally through a
 per-run CA scoped to that process, synthetic faults never reach the real
 provider, and requests that no fault matches go where your code sends them.
+
+The plugin reads no token or API key. From the environment, the helper reads
+only `FAULTKIT`, `NO_COLOR`, and `FORCE_COLOR`; the test command it runs
+inherits your environment, as it would in your shell.
 
 ## Layout
 
