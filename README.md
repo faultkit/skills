@@ -50,6 +50,12 @@ Then `/faultkit:values`, `/faultkit:review`, `/faultkit:harden`,
 trigger on their own when a conversation turns to resilience; `values`,
 `prove`, `prove-all`, and `run` run only when you invoke them.
 
+While the turn that invokes `prove`, `prove-all`, or `run` lasts, one shell
+command runs without a permission prompt: the bundled helper,
+`python3 faultkit/scripts/run_faultkit.py`, which runs the proof's test command
+under faultkit. Every other shell command goes through your permission
+settings.
+
 To pick up a new version:
 
 ```bash
