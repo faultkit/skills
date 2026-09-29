@@ -1,7 +1,7 @@
 {
   "name": "faultkit",
   "description": "faultkit skills for coding agents: review AI workflows for silent failures, harden the action boundary, and prove business invariants under injected faults.",
-  "owner": { "name": "faultkit" },
+  "owner": { "name": "faultkit", "email": "hello@faultkit.dev" },
   "plugins": [
     {
       "name": "faultkit",

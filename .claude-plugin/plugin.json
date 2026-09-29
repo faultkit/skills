@@ -2,7 +2,7 @@
   "name": "faultkit",
   "version": "0.4.0",
   "description": "Find the silent failures in AI workflows from business invariants, harden the action boundary, and prove it with faultkit, a local fault-injection proxy (downloads a pinned, checksum-verified release when none is installed; no telemetry).",
-  "author": { "name": "faultkit" },
+  "author": { "name": "faultkit", "email": "hello@faultkit.dev", "url": "https://faultkit.dev" },
   "homepage": "https://github.com/faultkit/skills",
   "repository": "https://github.com/faultkit/skills",
   "license": "Apache-2.0",
