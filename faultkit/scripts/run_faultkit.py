@@ -216,7 +216,7 @@ def build_from_source(source: Path, cache_dir: Path) -> Path:
 
 def resolve_binary(
     explicit: Optional[str],
-    env: dict,
+    env_bin: Optional[str],
     which: Callable[[str], Optional[str]],
     source: Optional[str],
     cache_dir: Path,
@@ -225,8 +225,8 @@ def resolve_binary(
 ) -> Path:
     if explicit:
         return Path(explicit)
-    if env.get("FAULTKIT"):
-        return Path(env["FAULTKIT"])
+    if env_bin:
+        return Path(env_bin)
     found = which("faultkit")
     if found:
         return Path(found)
@@ -757,14 +757,15 @@ def main(argv: Optional[list[str]] = None) -> int:
             return EXIT_USAGE
     try:
         binary = resolve_binary(
-            ns.faultkit_bin, dict(os.environ), shutil.which, ns.faultkit_source,
+            ns.faultkit_bin, os.environ.get("FAULTKIT"), shutil.which, ns.faultkit_source,
             Path(ns.cache_dir), ns.faultkit_version, download,
         )
     except (UnsupportedPlatform, ChecksumMismatch, subprocess.CalledProcessError, OSError) as exc:
         print(f"error: could not obtain faultkit: {exc}", file=sys.stderr)
         return EXIT_INTERNAL
 
-    color = use_color(ns.color, sys.stdout.isatty(), dict(os.environ))
+    color_env = {k: os.environ[k] for k in ("NO_COLOR", "FORCE_COLOR") if k in os.environ}
+    color = use_color(ns.color, sys.stdout.isatty(), color_env)
     if ns.manifest:
         return run_all(ns, manifest, binary, color, values)
 

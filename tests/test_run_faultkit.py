@@ -116,17 +116,17 @@ class ReportTests(unittest.TestCase):
 class ResolveTests(unittest.TestCase):
     def _resolve(self, **overrides):
         kwargs = dict(
-            explicit=None, env={}, which=lambda _: None, source=None,
+            explicit=None, env_bin=None, which=lambda _: None, source=None,
             cache_dir=Path("/c"), version="v0.1.2", downloader=lambda *a: Path("/d"),
         )
         kwargs.update(overrides)
         return rf.resolve_binary(**kwargs)
 
     def test_explicit_wins(self):
-        self.assertEqual(self._resolve(explicit="/x/faultkit", env={"FAULTKIT": "/y"}, which=lambda _: "/z"), Path("/x/faultkit"))
+        self.assertEqual(self._resolve(explicit="/x/faultkit", env_bin="/y", which=lambda _: "/z"), Path("/x/faultkit"))
 
     def test_env_beats_path(self):
-        self.assertEqual(self._resolve(env={"FAULTKIT": "/y"}, which=lambda _: "/z"), Path("/y"))
+        self.assertEqual(self._resolve(env_bin="/y", which=lambda _: "/z"), Path("/y"))
 
     def test_path_beats_download(self):
         self.assertEqual(self._resolve(which=lambda _: "/z"), Path("/z"))
