@@ -4,6 +4,9 @@ A skill for coding agents that protects the business value of an AI workflow
 when models, streams, tools, retrieval, networks, or state fail. It starts from
 what must never happen, not from what the API returned.
 
+It works on your project's checkout from a coding agent with a shell, and
+Claude Code is the tested path. Proving also needs Python 3 on macOS or Linux.
+
 ```text
 business value -> unacceptable outcome -> invariant -> fault -> recovery -> proof
 ```
@@ -49,6 +52,12 @@ Then `/faultkit:values`, `/faultkit:review`, `/faultkit:harden`,
 `/faultkit:run`, which does the same as `prove-all`. Review and Harden also
 trigger on their own when a conversation turns to resilience; `values`,
 `prove`, `prove-all`, and `run` run only when you invoke them.
+
+While the turn that invokes `prove`, `prove-all`, or `run` lasts, one shell
+command runs without a permission prompt: the bundled helper,
+`python3 faultkit/scripts/run_faultkit.py`, which runs the proof's test command
+under faultkit. Every other shell command goes through your permission
+settings.
 
 To pick up a new version:
 
@@ -200,10 +209,15 @@ The helper then makes no network call.
 
 Two more things reach the network, both under your control. Harden pushes a
 branch and opens a pull request on your project's own remote only after you
-say yes, and never with `--auto`. The test command being proven runs as it
+say yes, and never with `--auto`. `git` and `gh` sign in with your own setup,
+and neither command is pre-approved. The test command being proven runs as it
 normally would: faultkit proxies its HTTP(S) traffic locally through a
 per-run CA scoped to that process, synthetic faults never reach the real
 provider, and requests that no fault matches go where your code sends them.
+
+The plugin reads no token or API key. From the environment, the helper reads
+only `FAULTKIT`, `NO_COLOR`, and `FORCE_COLOR`; the test command it runs
+inherits your environment, as it would in your shell.
 
 ## Layout
 

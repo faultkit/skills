@@ -1,12 +1,12 @@
 {
   "name": "faultkit",
-  "description": "faultkit skills for coding agents: review AI workflows for silent failures, harden the action boundary, and prove business invariants under injected faults.",
-  "owner": { "name": "faultkit" },
+  "description": "faultkit skills for coding agents: declare what must never happen, find the silent failures in AI workflows, harden the action boundary, and prove it under injected faults.",
+  "owner": { "name": "faultkit", "email": "hello@faultkit.dev" },
   "plugins": [
     {
       "name": "faultkit",
       "source": "./",
-      "description": "Find the silent failures in AI workflows from business invariants, harden the action boundary, and prove it with faultkit, a local fault-injection proxy (downloads a pinned, checksum-verified release when none is installed; no telemetry)."
+      "description": "Declare what must never happen in your AI workflow, find the silent failures that would let it happen, harden the action boundary, and prove each fix under injected faults with faultkit, a local fault-injection proxy (downloads a pinned, checksum-verified release when none is installed; no telemetry)."
     }
   ]
 }
