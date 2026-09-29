@@ -4,6 +4,9 @@ A skill for coding agents that protects the business value of an AI workflow
 when models, streams, tools, retrieval, networks, or state fail. It starts from
 what must never happen, not from what the API returned.
 
+It works on your project's checkout from a coding agent with a shell, and
+Claude Code is the tested path. Proving also needs Python 3 on macOS or Linux.
+
 ```text
 business value -> unacceptable outcome -> invariant -> fault -> recovery -> proof
 ```
