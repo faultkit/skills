@@ -45,7 +45,7 @@ import sys
 from pathlib import Path
 from typing import Callable, Optional
 
-MIN_VERSION = "0.1.3"  # the first faultkit with --report (report/v1)
+MIN_VERSION = "0.1.3"  # the first faultkit whose --report writes report/v1
 FAULTKIT_VERSION = "0.1.3"  # the release this helper is tested with; install hints pin it
 INSTALL_PAGE = "https://faultkit.dev/docs/install/"
 NOT_INSTALLED = "faultkit is not installed. Install it, then run this again:"
@@ -167,10 +167,12 @@ def older_than(version: str, minimum: str) -> bool:
 
 
 def installed_version(binary: Path) -> Optional[str]:
-    """faultkit's own version, or None when it cannot say (a source build prints "dev")."""
+    """faultkit's own version. None when faultkit cannot say it (go install and source
+    builds print "dev") or when the call times out. An OSError (the binary cannot run)
+    propagates to the caller."""
     try:
         done = subprocess.run([str(binary), "version"], capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.TimeoutExpired):
+    except subprocess.TimeoutExpired:
         return None
     return parse_version(done.stdout)
 
@@ -722,9 +724,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"error: could not build faultkit from source: {exc}", file=sys.stderr)
         return EXIT_INTERNAL
 
-    version = installed_version(binary)
+    try:
+        version = installed_version(binary)
+    except OSError as exc:
+        print(f"error: cannot run faultkit at {binary}: {exc}", file=sys.stderr)
+        return EXIT_INTERNAL
     if version and older_than(version, MIN_VERSION):
-        headline = f"faultkit {version} is older than {MIN_VERSION}, the first release this helper can read. Upgrade it, then run this again:"
+        headline = f"faultkit {version} at {binary} is older than {MIN_VERSION}, the first release this helper can read. Upgrade it, then run this again:"
         print(f"error: {install_hint(platform.system().lower(), headline)}", file=sys.stderr)
         return EXIT_INTERNAL
 

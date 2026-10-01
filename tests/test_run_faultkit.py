@@ -634,10 +634,29 @@ class EndToEndTests(unittest.TestCase):
 
     def test_a_faultkit_older_than_the_minimum_stops_before_running(self):
         report = self.tmp / "r.json"
-        with mock.patch.dict(os.environ, {"FAKE_VERSION": "0.1.2"}):
-            code, _ = self.main(["--config", "s.yaml", "--report", str(report), "--", "true"])
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, {"FAKE_VERSION": "0.1.2"}), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = rf.main(["--faultkit-bin", str(self.fake), "--color", "never", "--config", "s.yaml", "--report", str(report), "--", "true"])
         self.assertEqual(code, rf.EXIT_INTERNAL)
         self.assertFalse(report.exists())
+        self.assertIn("is older than 0.1.3", err.getvalue())
+        self.assertIn(str(self.fake), err.getvalue())
+
+    def test_a_faultkit_bin_that_cannot_run_exits_2(self):
+        report = self.tmp / "r.json"
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = rf.main(["--faultkit-bin", str(self.tmp / "nope"), "--color", "never", "--config", "s.yaml", "--report", str(report), "--", "true"])
+        self.assertEqual(code, rf.EXIT_INTERNAL)
+        self.assertIn("cannot run faultkit at", err.getvalue())
+        self.assertFalse(report.exists())
+
+    def test_a_faultkit_that_prints_dev_skips_the_version_check(self):
+        with mock.patch.dict(os.environ, {"FAKE_VERSION": "dev"}):
+            code, out = self.main(["--config", "s.yaml", "--report", str(self.tmp / "r.json"), "--", "true"])
+        self.assertEqual(code, rf.EXIT_TARGET_FAILED)
+        self.assertIn("silent failure confirmed", out)
 
 
 class OutcomeTableTests(unittest.TestCase):
