@@ -387,10 +387,10 @@ are honoured; `--color always` forces it for captured output that a person
 will read.
 
 Binary resolution, first match wins: `--faultkit-bin`, the `FAULTKIT`
-environment variable, `faultkit` on `PATH`, then `--faultkit-source <dir>`
-built with `go build`. The helper never downloads faultkit. Without one it
-exits 2 and prints the install commands for this platform: show them to the
-user and stop. Never run an install or a download yourself.
+environment variable, then `faultkit` on `PATH`. The helper never downloads
+or builds faultkit. Without one it exits 2 and prints the install commands
+for this platform: show them to the user and stop. Never run an install or a
+download yourself.
 
 The proof block:
 

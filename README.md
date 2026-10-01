@@ -193,9 +193,9 @@ successfully; a green run that injected nothing is the most dangerous result.
 The helper `faultkit/scripts/run_faultkit.py` asks faultkit for a JSON
 report, counts fired events, and exits with faultkit's own code for one
 scenario, or with the worst result across the manifest, so shells and CI can
-branch on it. It uses faultkit from an explicit path, `$FAULTKIT`, `PATH`,
-or a local source tree, in that order, and never downloads it. Without one
-it stops and prints the install commands for your platform.
+branch on it. It uses faultkit from an explicit path, `$FAULTKIT`, or
+`PATH`, in that order, and never downloads or builds it. Without one it stops
+and prints the install commands for your platform.
 
 Runs stay in local, test, or explicitly authorized environments, with real
 irreversible side effects replaced by fakes.
@@ -225,8 +225,10 @@ per-run CA scoped to that process, synthetic faults never reach the real
 provider, and requests that no fault matches go where your code sends them.
 
 The plugin reads no token or API key. From the environment, the helper reads
-only `FAULTKIT`, `NO_COLOR`, and `FORCE_COLOR`; the test command it runs
-inherits your environment, as it would in your shell.
+only `FAULTKIT`, `NO_COLOR`, and `FORCE_COLOR`. It never copies or passes your
+environment on itself: faultkit and the test command it runs inherit it, as
+they would in your shell, so a key your tests already use goes only where your
+own code sends it.
 
 ## Layout
 
