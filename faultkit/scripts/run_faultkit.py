@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Acquire faultkit, run one scenario against a target command, evaluate the proof.
+"""Run one faultkit scenario against a target command and evaluate the proof.
 
 Standard library only. Prints a proof block on stdout and exits with faultkit's
 own exit code so shells and CI can branch on it:

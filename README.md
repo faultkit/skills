@@ -28,9 +28,9 @@ way to prove the result.
 | Prove | Explicitly requested fault injection | Selects or generates a faultkit scenario, writes the gate test if missing, uses your installed faultkit, runs it locally, reports the proof state. Keeps the proof in `.faultkit/invariants/` if you agree, otherwise in a temporary workspace. |
 | Prove all | Explicitly requested, whole project | Adds every invariant to the manifest, the ones no fault expresses yet as `not_generated`, runs the rest, reports one proof state per invariant. Same choice of where the proof is kept. |
 
-Prove and Prove all are opt-in. Ordinary use of the skill neither installs tools nor
-injects faults. Review ends by asking whether to run faultkit for the primary
-invariant, and names `/faultkit:prove-all` when there are more; without a
+Prove and Prove all are opt-in. Ordinary use of the skill never injects faults, and
+no mode installs anything. Review ends by asking whether to run faultkit for the
+primary invariant, and names `/faultkit:prove-all` when there are more; without a
 values file, the same question offers to save the inferred outcomes. Harden ends by
 asking whether to prove the change, then whether to open a pull request. Each
 question waits for your answer. Add `--auto` to any command to run the whole
@@ -160,12 +160,15 @@ is proven; lower the threshold to accept known gaps.
 
 Commit `.faultkit/invariants/` and the gate tests. Reports go to
 `.faultkit/reports/`, which the skill adds to `.gitignore`. From the project
-root, any machine, including CI, replays every invariant with the helper and
-gets one proof state per invariant. The helper is a single standard-library
-Python file: use the copy in `.agents/skills/faultkit/scripts/` when the
-skill is installed in the repository, or fetch it at a pinned commit:
+root, any machine with faultkit 0.1.3 or later installed (see [Network
+access](#network-access)), including CI, replays every invariant with the
+helper and gets one proof state per invariant. The helper is a single
+standard-library Python file: use the copy in
+`.agents/skills/faultkit/scripts/` when the skill is installed in the
+repository, or fetch it at a pinned commit:
 
 ```bash
+# faultkit 0.1.3 or later must be installed first; see Network access
 curl -fsSLo run_faultkit.py \
   https://raw.githubusercontent.com/faultkit/skills/<commit-sha>/faultkit/scripts/run_faultkit.py
 python3 run_faultkit.py --manifest .faultkit/invariants/manifest.json

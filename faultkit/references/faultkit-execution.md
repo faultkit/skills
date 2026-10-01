@@ -325,9 +325,9 @@ Rules:
 
 ## Running with the helper
 
-`scripts/run_faultkit.py` acquires faultkit, runs the scenario, reads the
-JSON report, and prints the proof block. It exits with faultkit's own code.
-`--scenario <name>` runs a builtin as it is: a sample, not a proof.
+`scripts/run_faultkit.py` finds the installed faultkit, runs the scenario,
+reads the JSON report, and prints the proof block. It exits with faultkit's
+own code. `--scenario <name>` runs a builtin as it is: a sample, not a proof.
 
 ```bash
 python3 <skill>/scripts/run_faultkit.py --verbose \
