@@ -137,6 +137,7 @@ def build_from_source(source: Path, cache_dir: Path) -> Path:
         ["go", "build", "-mod=vendor", "-o", str(target), "./cmd/faultkit"],
         cwd=source,
         check=True,
+        env={**os.environ, "GOTOOLCHAIN": "local"},
     )
     return target
 

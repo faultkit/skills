@@ -97,6 +97,12 @@ class ResolveTests(unittest.TestCase):
             self.assertEqual(self._resolve(source="/src"), Path("/built"))
         build.assert_called_once_with(Path("/src"), Path("/c"))
 
+    def test_a_source_build_never_fetches_a_go_toolchain(self):
+        with mock.patch.object(rf.subprocess, "run") as run:
+            rf.build_from_source(Path("/src"), Path(tempfile.mkdtemp()))
+        self.assertEqual(run.call_args.kwargs["env"]["GOTOOLCHAIN"], "local")
+        self.assertEqual(run.call_args.kwargs["cwd"], Path("/src"))
+
     def test_nothing_installed_raises_with_install_commands(self):
         with self.assertRaises(rf.FaultkitNotFound) as ctx:
             self._resolve()
