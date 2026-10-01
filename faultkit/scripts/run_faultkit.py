@@ -24,9 +24,9 @@ With a values file (--values, else the manifest's "values", else
 .faultkit/values.md when it exists), every entry's "outcome" must be
 declared in it; a bad values file or a dangling outcome exits 4.
 
-Binary resolution, first match wins: --faultkit-bin, $FAULTKIT, faultkit on
-PATH, then --faultkit-source (go build). The helper never downloads faultkit;
-without one it exits 2 and prints the install commands for this platform.
+Binary resolution, first match wins: --faultkit-bin, $FAULTKIT, then faultkit
+on PATH. The helper never downloads or builds faultkit; without one it exits 2
+and prints the install commands for this platform.
 """
 
 from __future__ import annotations
@@ -49,7 +49,6 @@ MIN_VERSION = "0.1.3"  # the first faultkit whose --report writes report/v1
 FAULTKIT_VERSION = "0.1.3"  # the release this helper is tested with; install hints pin it
 INSTALL_PAGE = "https://faultkit.dev/docs/install/"
 NOT_INSTALLED = "faultkit is not installed. Install it, then run this again:"
-DEFAULT_CACHE = Path.home() / ".cache" / "faultkit"
 
 EXIT_OK, EXIT_TARGET_FAILED, EXIT_INTERNAL, EXIT_FAULT_NOT_FIRED, EXIT_USAGE = 0, 1, 2, 3, 4
 MODES = ("auto", "proxy", "ebpf")
@@ -130,18 +129,6 @@ class Values:
     inferred: bool = False
 
 
-def build_from_source(source: Path, cache_dir: Path) -> Path:
-    target = cache_dir / "source-build" / "faultkit"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        ["go", "build", "-mod=vendor", "-o", str(target), "./cmd/faultkit"],
-        cwd=source,
-        check=True,
-        env={**os.environ, "GOTOOLCHAIN": "local"},
-    )
-    return target
-
-
 def install_hint(system: str, headline: str = NOT_INSTALLED) -> str:
     """How to get faultkit on this system. Printed for the user; the helper never runs it."""
     lines = [headline]
@@ -182,8 +169,6 @@ def resolve_binary(
     explicit: Optional[str],
     env_bin: Optional[str],
     which: Callable[[str], Optional[str]],
-    source: Optional[str],
-    cache_dir: Path,
     system: Optional[str] = None,
 ) -> Path:
     if explicit:
@@ -193,8 +178,6 @@ def resolve_binary(
     found = which("faultkit")
     if found:
         return Path(found)
-    if source:
-        return build_from_source(Path(source), cache_dir)
     raise FaultkitNotFound(install_hint(system or platform.system().lower()))
 
 
@@ -642,8 +625,6 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         help="with --manifest: where each invariant's report is written (default .faultkit/reports)",
     )
     parser.add_argument("--faultkit-bin", help="explicit faultkit binary")
-    parser.add_argument("--faultkit-source", help="faultkit source tree to build with go")
-    parser.add_argument("--cache-dir", default=str(DEFAULT_CACHE), help="where --faultkit-source builds go")
     parser.add_argument(
         "--base-url", action="store_true",
         help="inject *_BASE_URL instead of HTTPS_PROXY (Node fetch, filtered subprocesses)",
@@ -715,14 +696,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return EXIT_USAGE
     try:
-        binary = resolve_binary(
-            ns.faultkit_bin, os.environ.get("FAULTKIT"), shutil.which, ns.faultkit_source, Path(ns.cache_dir),
-        )
+        binary = resolve_binary(ns.faultkit_bin, os.environ.get("FAULTKIT"), shutil.which)
     except FaultkitNotFound as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return EXIT_INTERNAL
-    except (subprocess.CalledProcessError, OSError) as exc:
-        print(f"error: could not build faultkit from source: {exc}", file=sys.stderr)
         return EXIT_INTERNAL
 
     try:

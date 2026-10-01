@@ -79,7 +79,7 @@ class ReportTests(unittest.TestCase):
 
 class ResolveTests(unittest.TestCase):
     def _resolve(self, **overrides):
-        kwargs = dict(explicit=None, env_bin=None, which=lambda _: None, source=None, cache_dir=Path("/c"), system="linux")
+        kwargs = dict(explicit=None, env_bin=None, which=lambda _: None, system="linux")
         kwargs.update(overrides)
         return rf.resolve_binary(**kwargs)
 
@@ -89,19 +89,13 @@ class ResolveTests(unittest.TestCase):
     def test_env_beats_path(self):
         self.assertEqual(self._resolve(env_bin="/y", which=lambda _: "/z"), Path("/y"))
 
-    def test_path_beats_source(self):
-        self.assertEqual(self._resolve(which=lambda _: "/z", source="/src"), Path("/z"))
+    def test_path_is_used_when_nothing_is_given(self):
+        self.assertEqual(self._resolve(which=lambda _: "/z"), Path("/z"))
 
-    def test_source_builds_when_nothing_is_installed(self):
-        with mock.patch.object(rf, "build_from_source", return_value=Path("/built")) as build:
-            self.assertEqual(self._resolve(source="/src"), Path("/built"))
-        build.assert_called_once_with(Path("/src"), Path("/c"))
-
-    def test_a_source_build_never_fetches_a_go_toolchain(self):
-        with mock.patch.object(rf.subprocess, "run") as run:
-            rf.build_from_source(Path("/src"), Path(tempfile.mkdtemp()))
-        self.assertEqual(run.call_args.kwargs["env"]["GOTOOLCHAIN"], "local")
-        self.assertEqual(run.call_args.kwargs["cwd"], Path("/src"))
+    def test_the_helper_never_hands_the_environment_to_a_subprocess(self):
+        source = Path(rf.__file__).read_text()
+        self.assertNotIn("**os.environ", source)
+        self.assertNotIn("os.environ.copy(", source)
 
     def test_nothing_installed_raises_with_install_commands(self):
         with self.assertRaises(rf.FaultkitNotFound) as ctx:
@@ -182,6 +176,10 @@ class ArgTests(unittest.TestCase):
     def test_color_flag_parses(self):
         ns, _ = rf.parse_args(["--config", "s.yaml", "--report", "r.json", "--color", "always", "--", "true"])
         self.assertEqual(ns.color, "always")
+
+    def test_source_builds_are_gone(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            rf.parse_args(["--faultkit-source", "/src", "--config", "s.yaml", "--report", "r.json", "--", "true"])
 
     def test_missing_target_is_usage_error(self):
         with self.assertRaises(SystemExit):
