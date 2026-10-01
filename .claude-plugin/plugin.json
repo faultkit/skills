@@ -1,7 +1,7 @@
 {
   "name": "faultkit",
   "version": "0.4.1",
-  "description": "Declare what must never happen in your AI workflow, find the silent failures that would let it happen, harden the action boundary, and prove each fix under injected faults with faultkit, a local fault-injection proxy (downloads a pinned, checksum-verified release when none is installed; no telemetry).",
+  "description": "Declare what must never happen in your AI workflow, find the silent failures that would let it happen, harden the action boundary, and prove each fix under injected faults with faultkit, a local fault-injection proxy (needs faultkit installed: Homebrew, AUR, or go install; no telemetry).",
   "author": { "name": "faultkit", "email": "hello@faultkit.dev", "url": "https://faultkit.dev" },
   "homepage": "https://github.com/faultkit/skills",
   "repository": "https://github.com/faultkit/skills",

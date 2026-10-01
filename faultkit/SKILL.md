@@ -36,14 +36,14 @@ outcome when the file declares one.
 | Values | Declare what must never happen | Writes the business value and the unacceptable outcomes to `.faultkit/values.md`, from the user's words or a review's draft, only after a yes. Changes no code. |
 | Review | Assess, explain, or plan | Maps value, boundaries, silent-failure candidates, invariants, smallest recovery, residual risk. Changes no code. |
 | Harden | Build or fix a workflow | Counts the invariants, asks how to proceed when several are unguarded, adds the smallest deterministic guard at each action boundary and the gate test that locks it, and offers a pull request. Runs the project's tests, not faultkit. |
-| Prove | Explicitly requested fault injection | Selects or generates a faultkit scenario, writes the gate if missing, records it in the invariant manifest, obtains faultkit, runs it locally, reports the proof state. |
+| Prove | Explicitly requested fault injection | Selects or generates a faultkit scenario, writes the gate if missing, records it in the invariant manifest, uses the installed faultkit, runs it locally, reports the proof state. |
 | Prove all | Explicitly requested, for the whole project | Adds every invariant to the manifest, the ones no fault expresses yet as `not_generated`, then runs every other entry and reports one proof state per invariant. |
 
 Prove and Prove all are opt-in. Use them only when the user asks for fault
 injection or faultkit by name, or answers yes when Review or Harden asks.
-Never decide on your own to download a binary or inject faults. Review and
-Harden end by showing their findings, asking one question, and waiting; the
-user's yes is the opt-in.
+Never install or download faultkit yourself, and never decide on your own
+to inject faults. Review and Harden end by showing their findings, asking
+one question, and waiting; the user's yes is the opt-in.
 
 ## Auto mode
 
