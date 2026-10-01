@@ -19,42 +19,6 @@ import run_faultkit as rf  # noqa: E402
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "values"
 
 
-class PlatformTests(unittest.TestCase):
-    def test_linux_x86_64_maps_to_amd64(self):
-        self.assertEqual(rf.platform_key("Linux", "x86_64"), ("linux", "amd64"))
-
-    def test_darwin_arm64(self):
-        self.assertEqual(rf.platform_key("Darwin", "arm64"), ("darwin", "arm64"))
-
-    def test_unsupported_platform_raises_with_list(self):
-        with self.assertRaises(rf.UnsupportedPlatform) as ctx:
-            rf.platform_key("Windows", "AMD64")
-        self.assertIn("linux/amd64", str(ctx.exception))
-
-    def test_asset_name_strips_v(self):
-        self.assertEqual(rf.asset_name("v0.1.2", "linux", "amd64"), "faultkit_0.1.2_linux_amd64.tar.gz")
-
-
-class ChecksumTests(unittest.TestCase):
-    NAME = "faultkit_0.1.2_linux_amd64.tar.gz"
-
-    def test_matching_checksum_passes(self):
-        data = b"binary"
-        digest = hashlib.sha256(data).hexdigest()
-        rf.verify_checksum(data, f"{digest}  {self.NAME}\n", self.NAME)
-
-    def test_mismatch_raises_with_both_digests(self):
-        data = b"binary"
-        with self.assertRaises(rf.ChecksumMismatch) as ctx:
-            rf.verify_checksum(data, "0" * 64 + f"  {self.NAME}\n", self.NAME)
-        self.assertIn(hashlib.sha256(data).hexdigest(), str(ctx.exception))
-        self.assertIn("0" * 64, str(ctx.exception))
-
-    def test_missing_entry_raises(self):
-        with self.assertRaises(rf.ChecksumMismatch):
-            rf.verify_checksum(b"x", "abc  other.tar.gz\n", self.NAME)
-
-
 class ProofTests(unittest.TestCase):
     def test_fired_count_counts_only_fired_events(self):
         report = {"events": [{"fired": True}, {"fired": False}, {"fired": True}]}
@@ -115,10 +79,7 @@ class ReportTests(unittest.TestCase):
 
 class ResolveTests(unittest.TestCase):
     def _resolve(self, **overrides):
-        kwargs = dict(
-            explicit=None, env_bin=None, which=lambda _: None, source=None,
-            cache_dir=Path("/c"), version="v0.1.2", downloader=lambda *a: Path("/d"),
-        )
+        kwargs = dict(explicit=None, env_bin=None, which=lambda _: None, source=None, cache_dir=Path("/c"), system="linux")
         kwargs.update(overrides)
         return rf.resolve_binary(**kwargs)
 
@@ -128,18 +89,38 @@ class ResolveTests(unittest.TestCase):
     def test_env_beats_path(self):
         self.assertEqual(self._resolve(env_bin="/y", which=lambda _: "/z"), Path("/y"))
 
-    def test_path_beats_download(self):
-        self.assertEqual(self._resolve(which=lambda _: "/z"), Path("/z"))
+    def test_path_beats_source(self):
+        self.assertEqual(self._resolve(which=lambda _: "/z", source="/src"), Path("/z"))
 
-    def test_download_is_last(self):
-        calls = []
+    def test_source_builds_when_nothing_is_installed(self):
+        with mock.patch.object(rf, "build_from_source", return_value=Path("/built")) as build:
+            self.assertEqual(self._resolve(source="/src"), Path("/built"))
+        build.assert_called_once_with(Path("/src"), Path("/c"))
 
-        def downloader(version, cache_dir):
-            calls.append((version, cache_dir))
-            return Path("/d")
+    def test_nothing_installed_raises_with_install_commands(self):
+        with self.assertRaises(rf.FaultkitNotFound) as ctx:
+            self._resolve()
+        self.assertIn("brew install faultkit/tap/faultkit", str(ctx.exception))
+        self.assertIn("yay -S faultkit-bin", str(ctx.exception))
 
-        self.assertEqual(self._resolve(downloader=downloader), Path("/d"))
-        self.assertEqual(calls, [("v0.1.2", Path("/c"))])
+
+class InstallHintTests(unittest.TestCase):
+    def test_macos_gets_homebrew_and_no_aur(self):
+        hint = rf.install_hint("darwin")
+        self.assertIn("brew install faultkit/tap/faultkit", hint)
+        self.assertNotIn("yay", hint)
+
+    def test_every_platform_gets_the_pinned_go_install_and_the_install_page(self):
+        for system in ("darwin", "linux", "windows"):
+            hint = rf.install_hint(system)
+            self.assertIn(f"go install github.com/faultkit/faultkit/cmd/faultkit@v{rf.FAULTKIT_VERSION}", hint)
+            self.assertIn(rf.INSTALL_PAGE, hint)
+
+    def test_no_hint_pipes_a_download_into_a_shell(self):
+        for system in ("darwin", "linux", "windows"):
+            hint = rf.install_hint(system)
+            self.assertNotIn("curl", hint)
+            self.assertNotIn("| sh", hint)
 
 
 class ColorTests(unittest.TestCase):
@@ -624,6 +605,16 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn("=== outcomes ===", after)
         self.assertEqual(after.count(rf.NO_INVARIANT), 2)
         self.assertIn("declared 2, covered 0, uncovered 2, unlinked invariants 2", after)
+
+    def test_missing_faultkit_exits_2_and_prints_install_commands(self):
+        err = io.StringIO()
+        with mock.patch.object(rf.shutil, "which", return_value=None), mock.patch.dict(os.environ) as env, \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            env.pop("FAULTKIT", None)
+            code = rf.main(["--color", "never", "--config", "s.yaml", "--report", str(self.tmp / "r.json"), "--", "true"])
+        self.assertEqual(code, rf.EXIT_INTERNAL)
+        self.assertIn("faultkit is not installed", err.getvalue())
+        self.assertIn("brew install faultkit/tap/faultkit", err.getvalue())
 
 
 class OutcomeTableTests(unittest.TestCase):

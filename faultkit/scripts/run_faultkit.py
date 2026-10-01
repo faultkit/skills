@@ -25,8 +25,8 @@ With a values file (--values, else the manifest's "values", else
 declared in it; a bad values file or a dangling outcome exits 4.
 
 Binary resolution, first match wins: --faultkit-bin, $FAULTKIT, faultkit on
-PATH, --faultkit-source (go build), then a checksum-verified download of the
-pinned release into the cache directory.
+PATH, then --faultkit-source (go build). The helper never downloads faultkit;
+without one it exits 2 and prints the install commands for this platform.
 """
 
 from __future__ import annotations
@@ -35,7 +35,6 @@ import argparse
 from dataclasses import dataclass, field
 
 import hashlib
-import io
 import json
 import os
 import platform
@@ -43,25 +42,14 @@ import re
 import shutil
 import subprocess
 import sys
-import tarfile
-import urllib.request
 from pathlib import Path
 from typing import Callable, Optional
 
-# Bumped deliberately, never resolved from "latest". faultkit's own supply-chain
-# rule asks for roughly ten days of cooldown before adopting a new release.
-PINNED_VERSION = "v0.1.3"
-RELEASES_URL = "https://github.com/faultkit/faultkit/releases/download"
+MIN_VERSION = "0.1.3"  # the first faultkit with --report (report/v1)
+FAULTKIT_VERSION = "0.1.3"  # the release this helper is tested with; install hints pin it
+INSTALL_PAGE = "https://faultkit.dev/docs/install/"
+NOT_INSTALLED = "faultkit is not installed. Install it, then run this again:"
 DEFAULT_CACHE = Path.home() / ".cache" / "faultkit"
-
-PLATFORMS = {
-    ("linux", "x86_64"): ("linux", "amd64"),
-    ("linux", "amd64"): ("linux", "amd64"),
-    ("linux", "aarch64"): ("linux", "arm64"),
-    ("linux", "arm64"): ("linux", "arm64"),
-    ("darwin", "x86_64"): ("darwin", "amd64"),
-    ("darwin", "arm64"): ("darwin", "arm64"),
-}
 
 EXIT_OK, EXIT_TARGET_FAILED, EXIT_INTERNAL, EXIT_FAULT_NOT_FIRED, EXIT_USAGE = 0, 1, 2, 3, 4
 MODES = ("auto", "proxy", "ebpf")
@@ -101,12 +89,8 @@ STATE_COLOR = [
 ]
 
 
-class UnsupportedPlatform(Exception):
-    """No faultkit release exists for this operating system and architecture."""
-
-
-class ChecksumMismatch(Exception):
-    """The downloaded archive does not match the release's checksums.txt."""
+class FaultkitNotFound(Exception):
+    """No faultkit was given, set, on PATH, or built from source."""
 
 
 class ManifestError(Exception):
@@ -146,63 +130,6 @@ class Values:
     inferred: bool = False
 
 
-def platform_key(system: Optional[str] = None, machine: Optional[str] = None) -> tuple[str, str]:
-    system = (system or platform.system()).lower()
-    machine = (machine or platform.machine()).lower()
-    try:
-        return PLATFORMS[(system, machine)]
-    except KeyError:
-        supported = ", ".join(sorted({f"{o}/{a}" for o, a in PLATFORMS.values()}))
-        raise UnsupportedPlatform(
-            f"{system}/{machine} has no faultkit release; supported: {supported}"
-        ) from None
-
-
-def asset_name(version: str, os_name: str, arch: str) -> str:
-    return f"faultkit_{version.lstrip('v')}_{os_name}_{arch}.tar.gz"
-
-
-def verify_checksum(data: bytes, checksums_txt: str, name: str) -> None:
-    expected = None
-    for line in checksums_txt.splitlines():
-        parts = line.split()
-        if len(parts) == 2 and parts[1] == name:
-            expected = parts[0]
-    actual = hashlib.sha256(data).hexdigest()
-    if expected is None:
-        raise ChecksumMismatch(f"{name} is not listed in checksums.txt (actual sha256 {actual})")
-    if expected != actual:
-        raise ChecksumMismatch(f"sha256 mismatch for {name}: expected {expected}, actual {actual}")
-
-
-def _fetch(url: str) -> bytes:
-    # The host is fixed to GitHub releases and the version is pinned; nothing
-    # user-controlled reaches this URL.
-    with urllib.request.urlopen(url, timeout=60) as response:  # noqa: S310
-        return response.read()
-
-
-def download(version: str, cache_dir: Path) -> Path:
-    os_name, arch = platform_key()
-    target = cache_dir / version / "faultkit"
-    if target.exists():
-        return target
-    name = asset_name(version, os_name, arch)
-    base = f"{RELEASES_URL}/{version}"
-    archive = _fetch(f"{base}/{name}")
-    verify_checksum(archive, _fetch(f"{base}/checksums.txt").decode(), name)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
-        member = next(m for m in tar.getmembers() if m.isfile() and m.name.rstrip("/").endswith("faultkit"))
-        source = tar.extractfile(member)
-        if source is None:
-            raise ChecksumMismatch(f"{name} contains no faultkit binary")
-        with source, target.open("wb") as dst:
-            shutil.copyfileobj(source, dst)
-    target.chmod(0o755)
-    return target
-
-
 def build_from_source(source: Path, cache_dir: Path) -> Path:
     target = cache_dir / "source-build" / "faultkit"
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -214,14 +141,26 @@ def build_from_source(source: Path, cache_dir: Path) -> Path:
     return target
 
 
+def install_hint(system: str, headline: str = NOT_INSTALLED) -> str:
+    """How to get faultkit on this system. Printed for the user; the helper never runs it."""
+    lines = [headline]
+    if system in ("darwin", "linux"):
+        lines.append("  brew install faultkit/tap/faultkit")
+    if system == "linux":
+        lines.append("  yay -S faultkit-bin    # Arch Linux, from the AUR")
+    lines.append(f"  go install github.com/faultkit/faultkit/cmd/faultkit@v{FAULTKIT_VERSION}")
+    lines.append(f"More options: {INSTALL_PAGE}")
+    lines.append("Or pass --faultkit-bin, or set FAULTKIT, to use a faultkit you already have.")
+    return "\n".join(lines)
+
+
 def resolve_binary(
     explicit: Optional[str],
     env_bin: Optional[str],
     which: Callable[[str], Optional[str]],
     source: Optional[str],
     cache_dir: Path,
-    version: str,
-    downloader: Callable[[str, Path], Path],
+    system: Optional[str] = None,
 ) -> Path:
     if explicit:
         return Path(explicit)
@@ -232,7 +171,7 @@ def resolve_binary(
         return Path(found)
     if source:
         return build_from_source(Path(source), cache_dir)
-    return downloader(version, cache_dir)
+    raise FaultkitNotFound(install_hint(system or platform.system().lower()))
 
 
 def _argv(value) -> bool:
@@ -680,11 +619,7 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     )
     parser.add_argument("--faultkit-bin", help="explicit faultkit binary")
     parser.add_argument("--faultkit-source", help="faultkit source tree to build with go")
-    parser.add_argument(
-        "--faultkit-version", default=PINNED_VERSION,
-        help=f"release to download when nothing else resolves (default {PINNED_VERSION})",
-    )
-    parser.add_argument("--cache-dir", default=str(DEFAULT_CACHE))
+    parser.add_argument("--cache-dir", default=str(DEFAULT_CACHE), help="where --faultkit-source builds go")
     parser.add_argument(
         "--base-url", action="store_true",
         help="inject *_BASE_URL instead of HTTPS_PROXY (Node fetch, filtered subprocesses)",
@@ -757,11 +692,13 @@ def main(argv: Optional[list[str]] = None) -> int:
             return EXIT_USAGE
     try:
         binary = resolve_binary(
-            ns.faultkit_bin, os.environ.get("FAULTKIT"), shutil.which, ns.faultkit_source,
-            Path(ns.cache_dir), ns.faultkit_version, download,
+            ns.faultkit_bin, os.environ.get("FAULTKIT"), shutil.which, ns.faultkit_source, Path(ns.cache_dir),
         )
-    except (UnsupportedPlatform, ChecksumMismatch, subprocess.CalledProcessError, OSError) as exc:
-        print(f"error: could not obtain faultkit: {exc}", file=sys.stderr)
+    except FaultkitNotFound as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_INTERNAL
+    except (subprocess.CalledProcessError, OSError) as exc:
+        print(f"error: could not build faultkit from source: {exc}", file=sys.stderr)
         return EXIT_INTERNAL
 
     color_env = {k: os.environ[k] for k in ("NO_COLOR", "FORCE_COLOR") if k in os.environ}
