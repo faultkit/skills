@@ -123,6 +123,21 @@ class InstallHintTests(unittest.TestCase):
             self.assertNotIn("| sh", hint)
 
 
+class VersionTests(unittest.TestCase):
+    def test_parses_the_first_line_of_faultkit_version(self):
+        self.assertEqual(rf.parse_version("faultkit 0.1.3\ncommit: f7874e6\n"), "0.1.3")
+        self.assertEqual(rf.parse_version("faultkit v0.2.0-rc.1\n"), "0.2.0")
+
+    def test_unparseable_output_is_unknown(self):
+        self.assertIsNone(rf.parse_version("Error: unknown command\n"))
+        self.assertIsNone(rf.parse_version("faultkit dev\n"))
+
+    def test_older_than_compares_numerically(self):
+        self.assertTrue(rf.older_than("0.1.2", "0.1.3"))
+        self.assertFalse(rf.older_than("0.1.3", "0.1.3"))
+        self.assertFalse(rf.older_than("0.1.10", "0.1.3"))
+
+
 class ColorTests(unittest.TestCase):
     def test_auto_follows_tty(self):
         self.assertTrue(rf.use_color("auto", isatty=True, env={}))
@@ -444,6 +459,7 @@ class AggregateTests(unittest.TestCase):
 # A stand-in faultkit: writes a report/v1 file with one fired event unless
 # $FAKE_NO_REPORT is set, and exits with $FAKE_EXIT.
 FAKE_FAULTKIT = """#!/bin/sh
+[ "$1" = version ] && { echo "faultkit ${FAKE_VERSION:-0.1.3}"; exit 0; }
 while [ $# -gt 0 ]; do
   case $1 in --report) shift; [ -n "$FAKE_NO_REPORT" ] || printf '{"schema":"faultkit.dev/report/v1","events":[{"fired":true}]}' > "$1";; --) break;; esac
   shift
@@ -615,6 +631,13 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(code, rf.EXIT_INTERNAL)
         self.assertIn("faultkit is not installed", err.getvalue())
         self.assertIn("brew install faultkit/tap/faultkit", err.getvalue())
+
+    def test_a_faultkit_older_than_the_minimum_stops_before_running(self):
+        report = self.tmp / "r.json"
+        with mock.patch.dict(os.environ, {"FAKE_VERSION": "0.1.2"}):
+            code, _ = self.main(["--config", "s.yaml", "--report", str(report), "--", "true"])
+        self.assertEqual(code, rf.EXIT_INTERNAL)
+        self.assertFalse(report.exists())
 
 
 class OutcomeTableTests(unittest.TestCase):

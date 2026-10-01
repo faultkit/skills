@@ -154,6 +154,27 @@ def install_hint(system: str, headline: str = NOT_INSTALLED) -> str:
     return "\n".join(lines)
 
 
+VERSION_LINE = re.compile(r"^faultkit v?(\d+\.\d+\.\d+)", re.ASCII)
+
+
+def parse_version(output: str) -> Optional[str]:
+    match = VERSION_LINE.match(output)
+    return match.group(1) if match else None
+
+
+def older_than(version: str, minimum: str) -> bool:
+    return tuple(int(p) for p in version.split(".")) < tuple(int(p) for p in minimum.split("."))
+
+
+def installed_version(binary: Path) -> Optional[str]:
+    """faultkit's own version, or None when it cannot say (a source build prints "dev")."""
+    try:
+        done = subprocess.run([str(binary), "version"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return parse_version(done.stdout)
+
+
 def resolve_binary(
     explicit: Optional[str],
     env_bin: Optional[str],
@@ -699,6 +720,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         return EXIT_INTERNAL
     except (subprocess.CalledProcessError, OSError) as exc:
         print(f"error: could not build faultkit from source: {exc}", file=sys.stderr)
+        return EXIT_INTERNAL
+
+    version = installed_version(binary)
+    if version and older_than(version, MIN_VERSION):
+        headline = f"faultkit {version} is older than {MIN_VERSION}, the first release this helper can read. Upgrade it, then run this again:"
+        print(f"error: {install_hint(platform.system().lower(), headline)}", file=sys.stderr)
         return EXIT_INTERNAL
 
     color_env = {k: os.environ[k] for k in ("NO_COLOR", "FORCE_COLOR") if k in os.environ}
