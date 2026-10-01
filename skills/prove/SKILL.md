@@ -1,6 +1,6 @@
 ---
 name: prove
-description: Generates or selects a faultkit scenario for a business invariant, writes the deterministic gate test if the project lacks one, obtains faultkit, runs it locally, and reports the proof state. Only runs when invoked by the user.
+description: Generates or selects a faultkit scenario for a business invariant, writes the deterministic gate test if the project lacks one, uses the installed faultkit, runs it locally, and reports the proof state. Only runs when invoked by the user.
 disable-model-invocation: true
 argument-hint: "[--auto] [invariant or scenario] [-- test command]"
 allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/faultkit/scripts/run_faultkit.py *) Read Write Edit Grep Glob

@@ -16,13 +16,12 @@ Vulnerabilities in the faultkit binary itself belong to
 
 ## What this plugin does
 
-- Five skills: review, harden, prove, prove-all, and run (the same as
+- Six skills: values, review, harden, prove, prove-all, and run (the same as
   prove-all). No hooks, no MCP servers, no telemetry.
-- One outbound call from shipped code: `faultkit/scripts/run_faultkit.py`
-  downloads a pinned faultkit release from GitHub when no binary is
-  available, verifies its sha256 against the release's `checksums.txt`, and
-  never resolves "latest". [Network access](README.md#network-access)
-  describes it and the opt-out.
+- No outbound call from shipped code. `faultkit/scripts/run_faultkit.py`
+  runs only a faultkit you installed, and prints the install commands
+  when there is none. [Network access](README.md#network-access) has the
+  details.
 - Prove and Prove all write into your project only with your consent, otherwise
   into a temporary workspace. Harden opens a pull request only after you say
   yes.

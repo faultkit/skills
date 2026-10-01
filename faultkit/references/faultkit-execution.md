@@ -325,9 +325,9 @@ Rules:
 
 ## Running with the helper
 
-`scripts/run_faultkit.py` acquires faultkit, runs the scenario, reads the
-JSON report, and prints the proof block. It exits with faultkit's own code.
-`--scenario <name>` runs a builtin as it is: a sample, not a proof.
+`scripts/run_faultkit.py` finds the installed faultkit, runs the scenario,
+reads the JSON report, and prints the proof block. It exits with faultkit's
+own code. `--scenario <name>` runs a builtin as it is: a sample, not a proof.
 
 ```bash
 python3 <skill>/scripts/run_faultkit.py --verbose \
@@ -387,11 +387,10 @@ are honoured; `--color always` forces it for captured output that a person
 will read.
 
 Binary resolution, first match wins: `--faultkit-bin`, the `FAULTKIT`
-environment variable, `faultkit` on `PATH`, `--faultkit-source <dir>` built
-with `go build`, then a download of the pinned release for this platform
-verified against the release's `checksums.txt` and cached under
-`~/.cache/faultkit/<version>/`. The pinned version is a
-constant in the script; it is never resolved from "latest".
+environment variable, `faultkit` on `PATH`, then `--faultkit-source <dir>`
+built with `go build`. The helper never downloads faultkit. Without one it
+exits 2 and prints the install commands for this platform: show them to the
+user and stop. Never run an install or a download yourself.
 
 The proof block:
 
@@ -418,7 +417,7 @@ should read `invariant proven under fault`. Anything else is not done yet.
   secret's value. If found, stop and say why.
 - Irreversible side effects must be fakes: a JSONL ledger, an in-memory
   store, a sandbox account.
-- The runner downloads only the pinned version from the fixed releases URL,
-  verified by checksum.
+- Never install or download faultkit yourself. When the helper says it is
+  missing or too old, show the user its commands and wait.
 - Never weaken a test, edit fixture data, or change a scenario's
   `probability` to make a proof pass. Report the failure instead.

@@ -25,12 +25,12 @@ way to prove the result.
 | Values | Declare what must never happen | Writes your business value and unacceptable outcomes to `.faultkit/values.md`, from your words or a review's draft, after you say yes. Changes no code. |
 | Review | Assess, explain, or plan | Maps value, boundaries, silent failures, invariants, and residual risk, and ends with how many invariants faultkit can prove. Changes no code. |
 | Harden | Build or fix a workflow | Counts the invariants, asks whether to harden them one at a time, all in a row, or on your instruction, adds the smallest deterministic guard at each action boundary and the test that locks it, and asks before opening a pull request. |
-| Prove | Explicitly requested fault injection | Selects or generates a faultkit scenario, writes the gate test if missing, obtains faultkit, runs it locally, reports the proof state. Keeps the proof in `.faultkit/invariants/` if you agree, otherwise in a temporary workspace. |
+| Prove | Explicitly requested fault injection | Selects or generates a faultkit scenario, writes the gate test if missing, uses your installed faultkit, runs it locally, reports the proof state. Keeps the proof in `.faultkit/invariants/` if you agree, otherwise in a temporary workspace. |
 | Prove all | Explicitly requested, whole project | Adds every invariant to the manifest, the ones no fault expresses yet as `not_generated`, runs the rest, reports one proof state per invariant. Same choice of where the proof is kept. |
 
-Prove and Prove all are opt-in. Ordinary use of the skill neither installs tools nor
-injects faults. Review ends by asking whether to run faultkit for the primary
-invariant, and names `/faultkit:prove-all` when there are more; without a
+Prove and Prove all are opt-in. Ordinary use of the skill never injects faults, and
+no mode installs anything. Review ends by asking whether to run faultkit for the
+primary invariant, and names `/faultkit:prove-all` when there are more; without a
 values file, the same question offers to save the inferred outcomes. Harden ends by
 asking whether to prove the change, then whether to open a pull request. Each
 question waits for your answer. Add `--auto` to any command to run the whole
@@ -46,6 +46,8 @@ one.
 /plugin marketplace add faultkit/skills
 /plugin install faultkit@faultkit
 ```
+
+Prove and Prove all also need faultkit itself; see [Network access](#network-access).
 
 Then `/faultkit:values`, `/faultkit:review`, `/faultkit:harden`,
 `/faultkit:prove`, and `/faultkit:prove-all` are available, plus
@@ -76,6 +78,8 @@ For AI workflow changes, read `.agents/skills/faultkit/SKILL.md` and follow it.
 ```
 
 This repository is itself a working installation.
+
+Prove and Prove all need faultkit installed; see [Network access](#network-access).
 
 ## Example prompts
 
@@ -156,12 +160,15 @@ is proven; lower the threshold to accept known gaps.
 
 Commit `.faultkit/invariants/` and the gate tests. Reports go to
 `.faultkit/reports/`, which the skill adds to `.gitignore`. From the project
-root, any machine, including CI, replays every invariant with the helper and
-gets one proof state per invariant. The helper is a single standard-library
-Python file: use the copy in `.agents/skills/faultkit/scripts/` when the
-skill is installed in the repository, or fetch it at a pinned commit:
+root, any machine with faultkit 0.1.3 or later installed (see [Network
+access](#network-access)), including CI, replays every invariant with the
+helper and gets one proof state per invariant. The helper is a single
+standard-library Python file: use the copy in
+`.agents/skills/faultkit/scripts/` when the skill is installed in the
+repository, or fetch it at a pinned commit:
 
 ```bash
+# faultkit 0.1.3 or later must be installed first; see Network access
 curl -fsSLo run_faultkit.py \
   https://raw.githubusercontent.com/faultkit/skills/<commit-sha>/faultkit/scripts/run_faultkit.py
 python3 run_faultkit.py --manifest .faultkit/invariants/manifest.json
@@ -186,26 +193,28 @@ successfully; a green run that injected nothing is the most dangerous result.
 The helper `faultkit/scripts/run_faultkit.py` asks faultkit for a JSON
 report, counts fired events, and exits with faultkit's own code for one
 scenario, or with the worst result across the manifest, so shells and CI can
-branch on it. It obtains faultkit from an explicit path, `$FAULTKIT`,
-`PATH`, a local source tree, or a checksum-verified download of a pinned
-release, in that order. It never resolves "latest".
+branch on it. It uses faultkit from an explicit path, `$FAULTKIT`, `PATH`,
+or a local source tree, in that order, and never downloads it. Without one
+it stops and prints the install commands for your platform.
 
 Runs stay in local, test, or explicitly authorized environments, with real
 irreversible side effects replaced by fakes.
 
 ## Network access
 
-The plugin's own code makes one outbound call, and only in Prove and Prove all:
-when no faultkit binary is available, `faultkit/scripts/run_faultkit.py`
-downloads the pinned release from
-`https://github.com/faultkit/faultkit/releases/download/<version>/`, verifies
-it against that release's `checksums.txt`, and caches it under
-`~/.cache/faultkit/<version>/`. Nothing about you or your project is sent.
-There is no telemetry.
+The plugin's own code makes no network call. Prove and Prove all need
+faultkit 0.1.3 or later installed:
 
-To opt out, provide the binary yourself: install faultkit (Homebrew, AUR,
-`go install`), set `FAULTKIT=/path/to/faultkit`, or pass `--faultkit-bin`.
-The helper then makes no network call.
+```bash
+brew install faultkit/tap/faultkit                            # macOS, Linux
+yay -S faultkit-bin                                           # Arch Linux
+go install github.com/faultkit/faultkit/cmd/faultkit@v0.1.3
+```
+
+[faultkit.dev/docs/install](https://faultkit.dev/docs/install/) lists the
+other options. Without faultkit, the helper prints these commands and stops;
+it never runs an install itself. Nothing about you or your project is sent,
+and there is no telemetry.
 
 Two more things reach the network, both under your control. Harden pushes a
 branch and opens a pull request on your project's own remote only after you
